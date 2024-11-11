@@ -289,7 +289,7 @@ class ORCA:
         self.config = config
         self.work_dir = Path.cwd().resolve() if work_dir is None else Path(work_dir).resolve()
         self.orca_cmd = orca_cmd
-        print("Work Dir:", self.work_dir)
+        print("Runnin ORCA in:", self.work_dir)
         
         # Create working directory if it doesn't exist
         self.work_dir.mkdir(parents=True, exist_ok=True)
@@ -410,8 +410,8 @@ if __name__ == "__main__":
     
     # Example configuration
     config = {
-        "base": "sp",
-        "type": "sp",
+        "base": "opt",
+        "type": "opt",
         "method": "b3lyp",
         "basis": "6-31g",
         # "scf": "normal",
@@ -427,7 +427,7 @@ if __name__ == "__main__":
     mol = Molecule().read_from_xyz("./test/water.xyz")[-1]
     
     # Create ORCA manager
-    orca = ORCA(config, work_dir="test")
+    orca = ORCA(config, work_dir="/scratch/22")
     
     try:
         # Prepare input and run calculation
