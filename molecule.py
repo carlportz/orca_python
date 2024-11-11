@@ -11,7 +11,7 @@ class Molecule:
         
         Args:
             atoms: List of atomic symbols
-            coordinates: List/array of atomic coordinates (Nx3)
+            coordinates: List/array of atomic coordinates (Nx3, Angstrom)
             charge: Molecular charge
             multiplicity: Spin multiplicity
             context: Dictionary with additional information (optional)
@@ -136,6 +136,8 @@ class Molecule:
         Args:
             results: Dictionary from ORCA properties file
         """
+
+        BOHR_TO_ANGSTROM = 0.5291772105  # Conversion factor for Bohr to Angstrom
         
         molecules = []
         for mol in results['Properties']:
@@ -152,9 +154,9 @@ class Molecule:
             for i in range(natoms):
                 try:
                     atom = coord_data[i * 4]
-                    x = float(coord_data[i * 4 + 1])
-                    y = float(coord_data[i * 4 + 2])
-                    z = float(coord_data[i * 4 + 3])
+                    x = float(coord_data[i * 4 + 1]) * BOHR_TO_ANGSTROM
+                    y = float(coord_data[i * 4 + 2]) * BOHR_TO_ANGSTROM
+                    z = float(coord_data[i * 4 + 3]) * BOHR_TO_ANGSTROM
                 except (IndexError, ValueError) as e:
                     raise ValueError(f"Error parsing Cartesian coordinates: {str(e)}")
             
