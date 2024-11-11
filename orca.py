@@ -93,14 +93,18 @@ class ORCA_input():
     def _generate_blocks(self):
         """Generate the % blocks for parallel execution and memory settings."""
         blocks = []
+
+        # Base name block
+        if "base" in self.config:
+            blocks.append(f'%base\n         "{self.config["base"]}"')
         
         # Parallel execution block
         if "nprocs" in self.config:
-            blocks.append(f"%pal nprocs {self.config['nprocs']} end")
+            blocks.append(f"%pal\n          nprocs {self.config['nprocs']}\nend")
         
         # Memory block
         if "mem_per_proc" in self.config:
-            blocks.append(f"%maxcore {self.config['mem_per_proc']}")
+            blocks.append(f"%maxcore\n          {self.config['mem_per_proc']}")
             
         return "\n".join(blocks)
 
@@ -111,7 +115,7 @@ class ORCA_input():
         multiplicity = self.config["multiplicity"]
         
         if molecule is not None:
-            coords = "\n".join(f"{symbol} {x:5.6f} {y:5.6f} {z:5.6f}" for symbol, (x, y, z) in zip(molecule.atoms, molecule.coordinates))
+            coords = "\n".join(f"{symbol} {x:10.5f} {y:10.5f} {z:10.5f}" for symbol, (x, y, z) in zip(molecule.atoms, molecule.coordinates))
             return f"* xyz {charge} {multiplicity}\n{coords}\n*"
     
         elif xyz_file is not None:
@@ -289,7 +293,7 @@ class ORCA:
         self.config = config
         self.work_dir = Path.cwd().resolve() if work_dir is None else Path(work_dir).resolve()
         self.orca_cmd = orca_cmd
-        print("Runnin ORCA in:", self.work_dir)
+        print("Running ORCA in:", self.work_dir)
         
         # Create working directory if it doesn't exist
         self.work_dir.mkdir(parents=True, exist_ok=True)
@@ -359,8 +363,12 @@ class ORCA:
             
         if not lines:
             return False
-            
-        return any("ORCA TERMINATED NORMALLY" in line for line in lines[-5:])
+
+        if any("ORCA TERMINATED NORMALLY" in line for line in lines[-5:]):
+            return True
+        else:
+            print(lines)
+            return False
     
     def parse_output(self):
         """Parse ORCA output and property files."""
@@ -376,6 +384,9 @@ class ORCA:
         else:
             print("Warning: Property file not found.")
             self.results = None
+
+        if not self.results["Properties"][0]["Calculation_Status"]["STATUS"] == "NORMAL TERMINATION":
+            print("Warning: Calculation did not terminate normally.")
             
         return self.results
     
@@ -386,20 +397,12 @@ class ORCA:
         Args:
             keep_main_files: If True, keep input, output, and property files
         """
-        # List of patterns for temporary files
-        temp_patterns = ["*.tmp"]
-        
-        if not keep_main_files:
-            temp_patterns.extend(["*.inp", "*.out", "*_property.txt"])
-            
-        # Remove temporary files
-        for pattern in temp_patterns:
-            for file in self.work_dir.glob(pattern):
-                if self.base_name in file.name:
-                    try:
-                        file.unlink()
-                    except Exception as e:
-                        print(f"Warning: Could not remove {file}: {str(e)}")
+
+        patterns_to_keep = ["*.inp", "*.out", "*.property.txt"]
+
+        for file in self.work_dir.iterdir():
+            if not any(file.match(pattern) for pattern in patterns_to_keep):
+                file.unlink()
 
 
 # Example usage
@@ -410,39 +413,35 @@ if __name__ == "__main__":
     
     # Example configuration
     config = {
-        "base": "opt",
-        "type": "opt",
-        "method": "b3lyp",
-        "basis": "6-31g",
+        "base": "orca",
+        "type": "goat",
+        "method": "r2scan-3c",
+        "basis": "",
         # "scf": "normal",
         # "opt": "normal",
         # "constraint": "tors 2 1 3 4 90",
         "charge": "0",
         "multiplicity": "1",
         "nprocs": "20",
-        "mem_per_proc": "2950"
+        "mem_per_proc": "5000"
     }
 
-    # Create a water molecule
-    mol = Molecule().read_from_xyz("./test/water.xyz")[-1]
+    # Create a new molecule
+    mol = Molecule().read_from_xyz("./test/n-butane.xyz")[-1]
     
     # Create ORCA manager
-    orca = ORCA(config, work_dir="/scratch/22")
+    orca = ORCA(config, work_dir="/scratch/2328635/")
+
+    # Prepare input and run calculation
+    orca.prepare_input(molecule=mol)
+    orca.run()
     
-    try:
-        # Prepare input and run calculation
-        orca.prepare_input(molecule=mol)
-        orca.run()
-        
-        # Parse results (raw data)
-        results = orca.parse_output()
-        print(json.dumps(results, indent=2))
-        
-        # Clean up temporary files
-        orca.clean_up()
-            
-    except Exception as e:
-        print(f"Error during calculation: {str(e)}")
+    # Parse results (raw data)
+    results = orca.parse_output()
+    print(json.dumps(results, indent=2))
+    
+    # Clean up temporary files
+    orca.clean_up()
 
     mols = Molecule().read_from_ORCA(results)
     print(len(mols))
