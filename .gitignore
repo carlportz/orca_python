@@ -1,2 +1,7 @@
+# Directories
 test/
 __pycache__/
+
+# Files
+orca.py
+*.xyz
