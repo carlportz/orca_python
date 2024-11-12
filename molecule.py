@@ -92,7 +92,7 @@ class Molecule:
         return molecules    
 
 
-    def write_xyz(self, filename):
+    def write_to_xyz(self, filename):
         """
         Write molecular structure to xyz file.
         Context dictionary is written as JSON in the comment line.
@@ -106,7 +106,7 @@ class Molecule:
         with open(filename, 'w') as f:
             f.write(f"{self.n_atoms}\n")
             # Write context as JSON in comment line
-            f.write(f"{json.dumps(self.context)}\n")
+            f.write(f"{json.dumps(self.context)}\n") if self.context else f.write("\n")
             
             for atom, coord in zip(self.atoms, self.coordinates):
                 f.write(f"{atom:2s} {coord[0]:15.10f} {coord[1]:15.10f} {coord[2]:15.10f}\n")
@@ -153,7 +153,7 @@ class Molecule:
             coord_data = mol['Geometry']['CartesianCoordinates']
             for i in range(natoms):
                 try:
-                    atom = coord_data[i * 4]
+                    atom = ''.join(filter(str.isalpha, coord_data[i * 4]))
                     x = float(coord_data[i * 4 + 1]) * BOHR_TO_ANGSTROM
                     y = float(coord_data[i * 4 + 2]) * BOHR_TO_ANGSTROM
                     z = float(coord_data[i * 4 + 3]) * BOHR_TO_ANGSTROM
