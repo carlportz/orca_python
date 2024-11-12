@@ -49,7 +49,7 @@ class ORCA_input():
         
     def _validate_config(self):
         """Validate the configuration dictionary."""
-        required_keys = ["type", "method", "basis", "charge", "multiplicity"]
+        required_keys = ["type", "method", "basis"]
         for key in required_keys:
             if key not in self.config:
                 raise ValueError(f"Missing required configuration key: {key}")
@@ -90,6 +90,14 @@ class ORCA_input():
             opt = self.VALID_OPT[self.config["opt"].lower()]
             if opt:
                 parts.append(opt)
+        
+        # Add solvent model if specified
+        if "solvent" in self.config:
+            parts.append(self.config["solvent"])
+
+        # Add other keywords if specified
+        if "keywords" in self.config:
+            parts.append(self.config["keywords"])
                 
         return " ".join(parts)
 
@@ -108,14 +116,28 @@ class ORCA_input():
         # Memory block
         if "mem_per_proc" in self.config:
             blocks.append(f"%maxcore\n          {self.config['mem_per_proc']}")
-            
+
+        # Geometry constraints block
+        if "constraints" in self.config:
+            blocks.append(f"%geom\n          constraints")
+            for constraint in self.config["constraints"].split(';'):
+                blocks.append(f"          {{ {constraint} }}")
+            blocks.append("          end\nend")
+
+        # Relaxed scan block
+        if "scan" in self.config:
+            blocks.append(f"%geom\n          scan")
+            for scan in self.config["scan"].split(';'):
+                blocks.append(f"          {scan}")
+            blocks.append("          end\nend")
+
         return "\n".join(blocks)
 
 
     def _generate_xyz_block(self, xyz_file=None, molecule=None):
         """Generate the xyz coordinate block."""
-        charge = self.config["charge"]
-        multiplicity = self.config["multiplicity"]
+        charge = self.config["charge"] if "charge" in self.config else 0
+        multiplicity = self.config["multiplicity"] if "multiplicity" in self.config else 1
         
         if molecule is not None:
             coords = "\n".join(f"{symbol} {x:10.5f} {y:10.5f} {z:10.5f}" for symbol, (x, y, z) in zip(molecule.atoms, molecule.coordinates))
@@ -312,13 +334,11 @@ class ORCA:
         self.input_file = self.work_dir / f"{self.base_name}.inp"
         self.output_file = self.work_dir / f"{self.base_name}.out"
         self.property_file = self.work_dir / f"{self.base_name}.property.txt"
-        self.xyz_file = self.work_dir / xyz_file if xyz_file else None
+        self.xyz_file = Path(xyz_file).resolve() if xyz_file else None
         
         # Generate input file
         generator = ORCA_input(self.config)
         generator.write_input(self.input_file, xyz_file=xyz_file, molecule=molecule)
-        
-        return self.input_file
         
     def run(self):
         """
@@ -415,13 +435,17 @@ if __name__ == "__main__":
     # Example configuration
     config = {
         "base": "orca",
-        "type": "optfreq",
+        "type": "opt",
         "method": "b3lyp",
         "basis": "6-31g",
         "charge": "0",
         "multiplicity": "1",
         "nprocs": "20",
-        "mem_per_proc": "5000"
+        "mem_per_proc": "5000",
+        #"constraints": "D 0 1 2 3 180.0 C",
+        #"scan": "D 0 1 2 3 = 180.0, 0.0, 3",
+        "solvent": "cpcm(water)",
+        "keywords": "nopop smallprint",
     }
 
     # Read molecule from xyz file
@@ -443,3 +467,9 @@ if __name__ == "__main__":
 
     # Write optimized geometry to xyz file
     Molecule().read_from_ORCA(results)[-1].write_to_xyz("opt.xyz")
+
+# TODO: Add option to run ORCA from existing input file
+# write one or all geometries to xyz file
+# print last lines of output file if calculation failed
+# compatibility with ase
+# read one or all geometries from xyz file for orca input
