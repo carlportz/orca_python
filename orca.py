@@ -4,9 +4,9 @@ import json
 import re
 import numpy as np
 from pathlib import Path
+import socket
 
 from molecule import Molecule
-import socket
 
 
 class ORCA_input():
@@ -28,15 +28,18 @@ class ORCA_input():
     }
     
     VALID_TYPES = {
-        "sp": "",               # Single point
-        "grad": "EnGrad",       # Energy gradient
-        "opt": "Opt",           # Geometry optimization
-        "freq": "Freq",         # Frequency calculation
-        "optfreq": "Opt Freq",  # Optimization + Frequencies
-        "ts": "OptTS",          # Transition state search
-        "scan": "Scan",         # Coordinate scan
-        "md": "MD",             # Molecular dynamics
-        "goat": "Goat"          # Conformer search
+        "sp": "energy",               # Single point
+        "opt": "opt",                 # Geometry optimization
+        "copt": "copt",               # Geometry optimization (cartesian)
+        "grad": "engrad",             # Energy gradient
+        "numgrad": "numgrad",         # Numerical gradient
+        "freq": "freq",               # Frequency calculation
+        "numfreq": "numfreq",         # Numerical frequency
+        "optfreq": "opt freq",        # Optimization + Frequencies
+        "ts": "optts",                # Transition state search
+
+        "scan": "Scan",               # Coordinate scan
+        "goat": "Goat"                # Conformer search
     }
     
     def __init__(self, config):
@@ -293,7 +296,6 @@ class ORCA:
         self.config = config
         self.work_dir = Path.cwd().resolve() if work_dir is None else Path(work_dir).resolve()
         self.orca_cmd = orca_cmd
-        print("Running ORCA in:", self.work_dir)
         
         # Create working directory if it doesn't exist
         self.work_dir.mkdir(parents=True, exist_ok=True)
@@ -327,6 +329,8 @@ class ORCA:
         """
         if not self.input_file:
             raise ValueError("Input file not prepared. Call prepare_input() first.")
+
+        print(f"Running ORCA in {self.work_dir} on {socket.gethostname()}")
             
         # Prepare command
         cmd = f"{self.orca_cmd} {self.input_file} > {self.output_file}"
@@ -384,9 +388,6 @@ class ORCA:
         else:
             print("Warning: Property file not found.")
             self.results = None
-
-        if not self.results["Properties"][0]["Calculation_Status"]["STATUS"] == "NORMAL TERMINATION":
-            print("Warning: Calculation did not terminate normally.")
             
         return self.results
     
@@ -398,7 +399,7 @@ class ORCA:
             keep_main_files: If True, keep input, output, and property files
         """
 
-        patterns_to_keep = ["*.inp", "*.out", "*.property.txt"]
+        patterns_to_keep = ["*.inp", "*.out", "*.property.txt", "*.xyz"] if keep_main_files else []
 
         for file in self.work_dir.iterdir():
             if not any(file.match(pattern) for pattern in patterns_to_keep):
@@ -414,19 +415,16 @@ if __name__ == "__main__":
     # Example configuration
     config = {
         "base": "orca",
-        "type": "goat",
-        "method": "r2scan-3c",
-        "basis": "",
-        # "scf": "normal",
-        # "opt": "normal",
-        # "constraint": "tors 2 1 3 4 90",
+        "type": "optfreq",
+        "method": "b3lyp",
+        "basis": "6-31g",
         "charge": "0",
         "multiplicity": "1",
         "nprocs": "20",
         "mem_per_proc": "5000"
     }
 
-    # Create a new molecule
+    # Read molecule from xyz file
     mol = Molecule().read_from_xyz("./test/n-butane.xyz")[-1]
     
     # Create ORCA manager
@@ -438,11 +436,10 @@ if __name__ == "__main__":
     
     # Parse results (raw data)
     results = orca.parse_output()
-    print(json.dumps(results, indent=2))
+    #print(json.dumps(results, indent=2))
     
     # Clean up temporary files
     orca.clean_up()
 
-    mols = Molecule().read_from_ORCA(results)
-    print(len(mols))
-    print(mols[-1])
+    # Write optimized geometry to xyz file
+    Molecule().read_from_ORCA(results)[-1].write_to_xyz("opt.xyz")
