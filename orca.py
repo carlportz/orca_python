@@ -2,11 +2,11 @@ import os
 import subprocess
 import json
 import re
-import numpy as np
 from pathlib import Path
 import socket
 
-from molecule import Molecule
+from ase import Atoms
+from ase.io import read, write
 
 
 class ORCA_input():
@@ -37,7 +37,7 @@ class ORCA_input():
         "numfreq": "numfreq",         # Numerical frequency
         "optfreq": "opt freq",        # Optimization + Frequencies
         "ts": "optts",                # Transition state search
-
+        "es": "",                     # Excited states
         "scan": "Scan",               # Coordinate scan
         "goat": "Goat"                # Conformer search
     }
@@ -131,43 +131,48 @@ class ORCA_input():
                 blocks.append(f"          {scan}")
             blocks.append("          end\nend")
 
+        # Excited states block
+        if self.config["type"] == "es":
+            nroots = self.config["nroots"] if "nroots" in self.config else 10
+            blocks.append(f"%tddft\n            nroots {nroots}")
+            if "iroot" in self.config:
+                blocks.append(f"          iroot {self.config['iroot']}")
+            blocks.append("end")
+
         return "\n".join(blocks)
 
 
-    def _generate_xyz_block(self, xyz_file=None, molecule=None):
+    def _generate_xyz_block(self, molecule=None):
         """Generate the xyz coordinate block."""
         charge = self.config["charge"] if "charge" in self.config else 0
         multiplicity = self.config["multiplicity"] if "multiplicity" in self.config else 1
         
         if molecule is not None:
-            coords = "\n".join(f"{symbol} {x:10.5f} {y:10.5f} {z:10.5f}" for symbol, (x, y, z) in zip(molecule.atoms, molecule.coordinates))
-            return f"* xyz {charge} {multiplicity}\n{coords}\n*"
+            coords = []
+            for atom in molecule:
+                coords.append(f"{atom.symbol} {atom.position[0]:10.5f} {atom.position[1]:10.5f} {atom.position[2]:10.5f}")
+            coords_str = "\n".join(coords)
+            return f"* xyz {charge} {multiplicity}\n{coords_str}\n*"
     
-        elif xyz_file is not None:
-            # Verify the xyz file exists
-            if not os.path.exists(xyz_file):
-                raise FileNotFoundError(f"XYZ file not found: {xyz_file}")
-            return f"* xyzfile {charge} {multiplicity} {xyz_file} "
-
         else:
             return f"* xyz {charge} {multiplicity}\n\n*"
 
-    def generate_input(self, xyz_file=None, molecule=None):
+    def generate_input(self, molecule=None):
         """Generate the complete ORCA input file content."""
         parts = [
             self._generate_header(),
             "",  # Empty line after header
             self._generate_blocks(),
             "",  # Empty line before coordinates
-            self._generate_xyz_block(xyz_file=xyz_file, molecule=molecule),
+            self._generate_xyz_block(molecule=molecule),
             ""  # Final newline
         ]
         
         return "\n".join(filter(bool, parts))  # filter out empty strings
 
-    def write_input(self, filename, xyz_file=None, molecule=None):
+    def write_input(self, filename, molecule=None):
         """Write the ORCA input to a file."""
-        input_content = self.generate_input(xyz_file=xyz_file, molecule=molecule)
+        input_content = self.generate_input(molecule=molecule)
         with open(filename, 'w') as f:
             f.write(input_content)
 
@@ -294,7 +299,7 @@ class ORCA_output():
                     
                 elif collecting_array:
                     # Collect array data
-                    array_data.extend(self.convert_value(line, data_type))
+                    array_data.append(self.convert_value(line, data_type))
             
             if geom_result:
                 result["Properties"].append(geom_result)
@@ -329,17 +334,24 @@ class ORCA:
         self.property_file = None
         self.results = None
         
-    def prepare_input(self, xyz_file=None, molecule=None):
+    def prepare_input(self, molecule=None):
         """Generate ORCA input file."""
         self.input_file = self.work_dir / f"{self.base_name}.inp"
         self.output_file = self.work_dir / f"{self.base_name}.out"
         self.property_file = self.work_dir / f"{self.base_name}.property.txt"
-        self.xyz_file = Path(xyz_file).resolve() if xyz_file else None
         
         # Generate input file
         generator = ORCA_input(self.config)
-        generator.write_input(self.input_file, xyz_file=xyz_file, molecule=molecule)
-        
+        generator.write_input(self.input_file, molecule=molecule)
+
+    def read_input(self, input_file):
+        """Read ORCA input from existing file."""
+        self.input_file = Path(input_file).resolve()
+        if not self.input_file.exists():
+            raise FileNotFoundError(f"Input file not found: {self.input_file}")
+        self.output_file = self.work_dir / f"{self.base_name}.out"
+        self.property_file = self.work_dir / f"{self.base_name}.property.txt"
+
     def run(self):
         """
         Execute ORCA calculation and wait for it to complete.
@@ -357,7 +369,7 @@ class ORCA:
         
         try:
             # Run and wait for completion
-            result = subprocess.run(
+            self.cmd_result = subprocess.run(
                 cmd,
                 cwd=self.work_dir,
                 shell=True,
@@ -366,8 +378,6 @@ class ORCA:
                 text=True,
                 errors='ignore'
             )
-
-            return result
                 
         except subprocess.CalledProcessError as e:
             print(f"ORCA calculation failed with error:\n{e.stderr}")
@@ -375,6 +385,14 @@ class ORCA:
         except Exception as e:
             print(f"Error running ORCA: {str(e)}")
             raise
+
+        # Parse output
+        self.results = self.parse_output()
+
+        # Clean up temporary files
+        self.clean_up()
+
+        return self.results
             
     def check_status(self):
         """Check if the calculation has completed and was successful."""
@@ -391,7 +409,6 @@ class ORCA:
         if any("ORCA TERMINATED NORMALLY" in line for line in lines[-5:]):
             return True
         else:
-            print(lines)
             return False
     
     def parse_output(self):
@@ -435,7 +452,7 @@ if __name__ == "__main__":
     # Example configuration
     config = {
         "base": "orca",
-        "type": "opt",
+        "type": "es",
         "method": "b3lyp",
         "basis": "6-31g",
         "charge": "0",
@@ -449,27 +466,21 @@ if __name__ == "__main__":
     }
 
     # Read molecule from xyz file
-    mol = Molecule().read_from_xyz("./test/n-butane.xyz")[-1]
+    mol = read("./test/water.xyz")
     
     # Create ORCA manager
     orca = ORCA(config, work_dir="/scratch/2328635/")
 
     # Prepare input and run calculation
     orca.prepare_input(molecule=mol)
-    orca.run()
+    results = orca.run()
     
-    # Parse results (raw data)
-    results = orca.parse_output()
-    #print(json.dumps(results, indent=2))
+    # Print results
+    print(json.dumps(results, indent=2))
     
-    # Clean up temporary files
-    orca.clean_up()
-
-    # Write optimized geometry to xyz file
-    Molecule().read_from_ORCA(results)[-1].write_to_xyz("opt.xyz")
-
-# TODO: Add option to run ORCA from existing input file
-# write one or all geometries to xyz file
+    
+# TODO: 
+# write one or all geometries to xyz file (ase)
 # print last lines of output file if calculation failed
 # compatibility with ase
-# read one or all geometries from xyz file for orca input
+# read one or all geometries from xyz file for orca input (">")
