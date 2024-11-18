@@ -6,7 +6,7 @@ import numpy as np
 from pathlib import Path
 import socket
 
-from molecule import Molecule
+from ase.io import read
 
 
 class CREST_input():
@@ -87,6 +87,8 @@ class CREST_input():
         # Geometry constraints block
         if "constraints" in self.config:
             blocks.append(f"$constrain")
+            if "force constant" in self.config:
+                blocks.append(f"    force constant={self.config['force constant']}")
             for constraint in self.config["constraints"].split(';'):
                 blocks.append(f"    {constraint}")
             blocks.append("$end")
@@ -183,10 +185,11 @@ class CREST:
             
         # Prepare command
         cmd = f"{self.crest_cmd} {self.cmd_options} > {self.output_file}"
+        print(f"Running command: {cmd}")
         
         try:
             # Run and wait for completion
-            self.result = subprocess.run(
+            self.cmd_result = subprocess.run(
                 cmd,
                 cwd=self.work_dir,
                 shell=True,
@@ -195,8 +198,6 @@ class CREST:
                 text=True,
                 errors='ignore'
             )
-
-            return self.result
                 
         except subprocess.CalledProcessError as e:
             print(f"Crest calculation failed with error:\n{e.stderr}")
@@ -204,6 +205,15 @@ class CREST:
         except Exception as e:
             print(f"Error running Crest: {str(e)}")
             raise
+
+        # Parse output
+        self.results = self.parse_output()
+
+        # Add configuration to results
+        self.results["Configuration"] = self.config
+
+        # Clean up temporary files
+        self.clean_up()
             
     def check_status(self):
         """Check if the calculation has completed and was successful."""
@@ -251,6 +261,21 @@ class CREST:
             if not any(file.match(pattern) for pattern in patterns_to_keep):
                 file.unlink()
 
+    def get_ensemble(self):
+        """Return optimized ensemble from XTB output as ASE Atoms object."""
+        if not self.results:
+            raise ValueError("No results available. Run calculation first.")
+        
+        # Construct path to last geometry
+        mol_path = self.work_dir / "crest_conformers.xyz"
+        if not mol_path.exists():
+            raise FileNotFoundError(f"Ensemble file not found: {mol_path}")
+
+        # Read last geometry from file
+        ensemble = read(mol_path, format="xyz", index=":")
+        
+        return ensemble
+
 
 # Example usage
 if __name__ == "__main__":
@@ -261,11 +286,11 @@ if __name__ == "__main__":
     # Example configuration
     config = {
         "type": "conf",
-        "method": "gfn2",
-        "nprocs": "38",
+        #"method": "gfn2",
+        "nprocs": "20",
         #"constraints": "dihedral: 1,2,3,4,90.0",
         "constraints": "angle: 2,3,4,180.0",
-        "force_constant": "1.0",
+        "force constant": "0.25",
         #"solvent": "water",
     }
 
@@ -280,9 +305,5 @@ if __name__ == "__main__":
     crest.run()
     
     # Parse results (raw data)
-    results = crest.parse_output()
-    print(json.dumps(results, indent=2))
-    
-    # Clean up temporary files
-    crest.clean_up()
+    print(json.dumps(crest.results, indent=2))
 

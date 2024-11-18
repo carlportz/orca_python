@@ -1,4 +1,3 @@
-import os
 import subprocess
 import json
 import re
@@ -7,7 +6,6 @@ import socket
 
 from ase import Atoms
 from ase.io import read, write
-
 
 class ORCA_input():
     """Class to generate ORCA input files from a configuration dictionary."""
@@ -30,17 +28,18 @@ class ORCA_input():
     VALID_TYPES = {
         "sp": "energy",               # Single point
         "opt": "opt",                 # Geometry optimization
-        "copt": "copt",               # Geometry optimization (cartesian)
         "grad": "engrad",             # Energy gradient
         "numgrad": "numgrad",         # Numerical gradient
         "freq": "freq",               # Frequency calculation
         "numfreq": "numfreq",         # Numerical frequency
         "optfreq": "opt freq",        # Optimization + Frequencies
         "ts": "optts",                # Transition state search
-        "es": "",                     # Excited states
         "scan": "Scan",               # Coordinate scan
         "goat": "Goat"                # Conformer search
+                                      # Add more as needed...
     }
+
+    BOHR_TO_ANGSTROM = 0.529177210544
     
     def __init__(self, config):
         """Initialize with configuration dictionary."""
@@ -56,15 +55,15 @@ class ORCA_input():
                 
         # Validate calculation type
         if self.config["type"].lower() not in self.VALID_TYPES:
-            raise ValueError(f"Invalid calculation type: {self.config['type']}")
+            raise ValueError(f"Invalid calculation type: {self.config['type']}. Valid types are: {', '.join(self.VALID_TYPES.keys())}")
             
         # Validate SCF convergence if present
         if "scf" in self.config and self.config["scf"].lower() not in self.VALID_SCF:
-            raise ValueError(f"Invalid SCF convergence: {self.config['scf']}")
+            raise ValueError(f"Invalid SCF convergence: {self.config['scf']}. Valid values are: {', '.join(self.VALID_SCF.keys())}")
             
         # Validate optimization convergence if present
         if "opt" in self.config and self.config["opt"].lower() not in self.VALID_OPT:
-            raise ValueError(f"Invalid optimization convergence: {self.config['opt']}")
+            raise ValueError(f"Invalid optimization convergence: {self.config['opt']}. Valid values are: {', '.join(self.VALID_OPT.keys())}")
 
     def _generate_header(self):
         """Generate the main ORCA command line."""
@@ -132,9 +131,8 @@ class ORCA_input():
             blocks.append("          end\nend")
 
         # Excited states block
-        if self.config["type"] == "es":
-            nroots = self.config["nroots"] if "nroots" in self.config else 10
-            blocks.append(f"%tddft\n            nroots {nroots}")
+        if "nroots" in self.config:
+            blocks.append(f"%tddft\n            nroots {self.config['nroots']}")
             if "iroot" in self.config:
                 blocks.append(f"          iroot {self.config['iroot']}")
             blocks.append("end")
@@ -150,7 +148,10 @@ class ORCA_input():
         if molecule is not None:
             coords = []
             for atom in molecule:
-                coords.append(f"{atom.symbol} {atom.position[0]:10.5f} {atom.position[1]:10.5f} {atom.position[2]:10.5f}")
+                x = atom.position[0]
+                y = atom.position[1]
+                z = atom.position[2]
+                coords.append(f"{atom.symbol} {x:10.5f} {y:10.5f} {z:10.5f}")
             coords_str = "\n".join(coords)
             return f"* xyz {charge} {multiplicity}\n{coords_str}\n*"
     
@@ -161,11 +162,8 @@ class ORCA_input():
         """Generate the complete ORCA input file content."""
         parts = [
             self._generate_header(),
-            "",  # Empty line after header
             self._generate_blocks(),
-            "",  # Empty line before coordinates
             self._generate_xyz_block(molecule=molecule),
-            ""  # Final newline
         ]
         
         return "\n".join(filter(bool, parts))  # filter out empty strings
@@ -175,7 +173,6 @@ class ORCA_input():
         input_content = self.generate_input(molecule=molecule)
         with open(filename, 'w') as f:
             f.write(input_content)
-
 
 
 class ORCA_output():
@@ -319,7 +316,7 @@ class ORCA:
             work_dir: Working directory for the calculation (default: current directory)
             orca_cmd: Path to ORCA executable (default: "orca")
         """
-            
+        
         self.config = config
         self.work_dir = Path.cwd().resolve() if work_dir is None else Path(work_dir).resolve()
         self.orca_cmd = orca_cmd
@@ -389,10 +386,11 @@ class ORCA:
         # Parse output
         self.results = self.parse_output()
 
+        # Add configuration to results
+        self.results["Configuration"] = self.config
+
         # Clean up temporary files
         self.clean_up()
-
-        return self.results
             
     def check_status(self):
         """Check if the calculation has completed and was successful."""
@@ -421,12 +419,12 @@ class ORCA:
         # Parse property file if it exists
         if self.property_file.exists():
             with open(self.property_file, 'r') as f:
-                self.results = parser.parse_orca_output(f.read())
+                results = parser.parse_orca_output(f.read())
         else:
             print("Warning: Property file not found.")
-            self.results = None
+            results = None
             
-        return self.results
+        return results
     
     def clean_up(self, keep_main_files=True):
         """
@@ -442,6 +440,21 @@ class ORCA:
             if not any(file.match(pattern) for pattern in patterns_to_keep):
                 file.unlink()
 
+    def get_molecule(self):
+        """Return last molecule from ORCA output as ASE Atoms object."""
+        if not self.results:
+            raise ValueError("No results available. Run calculation first.")
+        
+        # Construct path to last geometry
+        mol_path = self.work_dir / f"{self.base_name}.xyz"
+        if not mol_path.exists():
+            raise FileNotFoundError(f"Geometry file not found: {mol_path}")
+
+        # Read last geometry from file
+        mol = read(mol_path, format="xyz")
+        
+        return mol
+
 
 # Example usage
 if __name__ == "__main__":
@@ -452,35 +465,28 @@ if __name__ == "__main__":
     # Example configuration
     config = {
         "base": "orca",
-        "type": "es",
+        "type": "opt",
         "method": "b3lyp",
         "basis": "6-31g",
-        "charge": "0",
-        "multiplicity": "1",
         "nprocs": "20",
         "mem_per_proc": "5000",
         #"constraints": "D 0 1 2 3 180.0 C",
         #"scan": "D 0 1 2 3 = 180.0, 0.0, 3",
-        "solvent": "cpcm(water)",
+        #"solvent": "cpcm(water)",
+        #"iroot": "1",
+        #"nroots": "5",
         "keywords": "nopop smallprint",
     }
 
     # Read molecule from xyz file
-    mol = read("./test/water.xyz")
+    mol = read("./test/water.xyz", format="xyz")
     
     # Create ORCA manager
     orca = ORCA(config, work_dir="/scratch/2328635/")
 
     # Prepare input and run calculation
     orca.prepare_input(molecule=mol)
-    results = orca.run()
+    orca.run()
     
     # Print results
-    print(json.dumps(results, indent=2))
-    
-    
-# TODO: 
-# write one or all geometries to xyz file (ase)
-# print last lines of output file if calculation failed
-# compatibility with ase
-# read one or all geometries from xyz file for orca input (">")
+    print(json.dumps(orca.results, indent=2))
