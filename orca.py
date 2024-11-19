@@ -37,7 +37,7 @@ class ORCA_input:
             Write the ORCA input to a file.
     """
     
-    # Define constants for various settings
+    # Valid ORCA SCF convergence criteria
     VALID_SCF = {
         "loose": "LooseScf",
         "tight": "TightScf",
@@ -45,6 +45,7 @@ class ORCA_input:
         None: ""
     }
     
+    # Valid ORCA optimization convergence criteria
     VALID_OPT = {
         "loose": "LooseOpt",
         "tight": "TightOpt",
@@ -52,6 +53,7 @@ class ORCA_input:
         None: ""
     }
     
+    # Valid ORCA calculation types
     VALID_TYPES = {
         "sp": "energy",               # Single point
         "opt": "opt",                 # Geometry optimization
@@ -140,7 +142,7 @@ class ORCA_input:
 
     def _generate_blocks(self):
         """
-        Generate the % blocks for parallel execution and memory settings based on the configuration.
+        Generate the % blocks based on the configuration.
 
         Returns:
             str: A string containing the concatenated blocks of settings.
@@ -455,6 +457,9 @@ class ORCA:
         property_file (Path): Path to the ORCA property file.
         results (dict): Parsed results from the ORCA calculation.
 
+    Constants:
+        PATTERNS_TO_KEEP (list): List of file patterns to keep after cleaning
+
     Methods:
         prepare_input(molecule=None):
             Generate ORCA input file.
@@ -471,8 +476,14 @@ class ORCA:
         get_molecule():
             Return the last molecule from ORCA output as an ASE Atoms object.
     """
+
+    # Constant for file patterns to keep
+    PATTERNS_TO_KEEP = ["*.inp", 
+                        "*.out", 
+                        "*.property.txt", 
+                        "*.xyz"]
     
-    def __init__(self, config, orca_cmd="/home/kreimendahl/software/orca_6.0.1/orca", work_dir=None):
+    def __init__(self, config, orca_cmd=None, work_dir=None):
         """
         Initialize the ORCA class with configuration, command path, and working directory.
 
@@ -618,17 +629,12 @@ class ORCA:
             
         return results
     
-    def clean_up(self, keep_main_files=True):
+    def clean_up(self):
         """
         Clean up calculation files.
-
-        Args:
-            keep_main_files (bool): If True, keep input, output, and property files.
         """
-        patterns_to_keep = ["*.inp", "*.out", "*.property.txt", "*.xyz"] if keep_main_files else []
-
         for file in self.work_dir.iterdir():
-            if not any(file.match(pattern) for pattern in patterns_to_keep):
+            if not any(file.match(pattern) for pattern in self.PATTERNS_TO_KEEP):
                 file.unlink()
 
     def get_molecule(self):

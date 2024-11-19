@@ -1,8 +1,10 @@
 import subprocess
 import json
 from pathlib import Path
+import shutil
 import socket
 
+from ase import Atoms
 from ase.io import read, write
 
 class XTB_input:
@@ -71,11 +73,11 @@ class XTB_input:
 
         # Validate calculation type
         if self.config["type"].lower() not in self.VALID_TYPES:
-            raise ValueError(f"Invalid calculation type: {self.config['type']}")
+            raise ValueError(f"Invalid calculation type: {self.config['type']}. Valid types are: {', '.join(self.VALID_TYPES.keys())}")
 
         # Validate method if specified
         if "method" in self.config and self.config["method"].lower() not in self.VALID_METHODS:
-            raise ValueError(f"Invalid method: {self.config['method']}")
+            raise ValueError(f"Invalid method: {self.config['method']}. Valid methods are: {', '.join(self.VALID_METHODS.keys())}")
 
     def _generate_command(self):
         """
@@ -179,6 +181,11 @@ class XTB_input:
         Returns:
             str: The complete command line options including the input and coordinates files.
         """
+        if not molecule:
+            molecule = Atoms("H", positions=[[0, 0, 0]])
+            print("Warning: No molecule provided. Using default hydrogen atom.")
+
+        # Generate input content and command
         command, input_content = self.generate_input()
 
         # Write the input file
@@ -203,41 +210,13 @@ class XTB_output:
     Class to handle XTB output file parsing.
 
     Methods:
-        _find_property_section(content: str) -> int:
-            Find the section in the output file containing property data.
         parse_xtb_output(content: str) -> dict:
             Parse XTB output file SUMMARY into a structured dictionary.
     """
 
-    def _find_property_section(self, content):
-        """
-        Find the section in the output file containing property data.
-
-        Args:
-            content (str): The content of the XTB output file as a string.
-
-        Returns:
-            int: The starting index of the property section.
-
-        Raises:
-            ValueError: If the SUMMARY section is not found in the file content.
-        """
-        lines = content.split('\n')
-        start_idx = -1
-        
-        for i, line in reversed(list(enumerate(lines))):
-            if "SUMMARY" in line:
-                start_idx = i
-                break
-                    
-        if start_idx == -1:
-            raise ValueError("Could not find SUMMARY in file content")
-            
-        return start_idx
-
     def parse_xtb_output(self, content):
         """
-        Parse XTB output file SUMMARY into a structured dictionary.
+        Parse XTB output file SUMMARY sections into a structured dictionary.
 
         Args:
             content (str): The content of the XTB output file as a string.
@@ -245,14 +224,26 @@ class XTB_output:
         Returns:
             dict: A dictionary containing parsed data from the XTB output file.
         """
-        result = {}   
-        start_idx = self._find_property_section(content)
+        result = {"Properties": []}
         lines = content.split('\n')
         
-        # Process lines between dashes
-        for line in lines[start_idx+2:]:
+        # Process lines
+        for line in lines:
             line = line.strip()
-            if ':' in line:
+            
+            # Start of property section
+            if 'SUMMARY' in line:
+                summary = {}
+                found = True
+                continue
+            
+            # End of property section
+            if '..........' in line and found:
+                result["Properties"].append(summary)
+                found = False
+            
+            # Parse properties
+            if found:
                 # Remove leading/trailing ':' and split by whitespace
                 clean_line = line.replace(':', '').strip()
                 parts = clean_line.split()
@@ -261,10 +252,7 @@ class XTB_output:
                     # Join all parts except the last two (value and unit) as the key
                     key = ' '.join(parts[:-2]).strip()
                     value = float(parts[-2])  # Convert value to float
-                    result[key] = value     
-            
-            if '..........' in line:
-                break
+                    summary[key] = value     
         
         return result
 
@@ -282,6 +270,9 @@ class XTB:
         output_file (Path): Path to the XTB output file.
         results (dict): Parsed results from the XTB calculation.
 
+    Constants:
+        PATTERNS_TO_KEEP (list): List of file patterns to keep after cleaning.
+        
     Methods:
         prepare_input(molecule=None):
             Generate XTB input file, if necessary.
@@ -296,8 +287,15 @@ class XTB:
         get_molecule():
             Return the last molecule from XTB output as an ASE Atoms object.
     """
+
+    # Constant for file patterns to keep
+    PATTERNS_TO_KEEP = ["*.inp", 
+                        "*.out", 
+                        "*.xyz", 
+                        "*.coord", 
+                        "*.log"]
     
-    def __init__(self, config, xtb_cmd="/home/kreimendahl/software/orca_6.0.1/otool_xtb", work_dir=None):
+    def __init__(self, config, xtb_cmd=None, work_dir=None):
         """
         Initialize the XTB class with configuration, command path, and working directory.
 
@@ -308,7 +306,7 @@ class XTB:
         """
         self.config = config
         self.work_dir = Path.cwd().resolve() if work_dir is None else Path(work_dir).resolve()
-        self.xtb_cmd = xtb_cmd
+        self.xtb_cmd = shutil.which("xtb") if xtb_cmd is None else xtb_cmd
         
         # Create working directory if it doesn't exist
         self.work_dir.mkdir(parents=True, exist_ok=True)
@@ -415,17 +413,12 @@ class XTB:
             
         return self.results
     
-    def clean_up(self, keep_main_files=True):
+    def clean_up(self):
         """
         Clean up calculation files.
-
-        Args:
-            keep_main_files (bool): If True, keep input, output, and property files.
         """
-        patterns_to_keep = ["*.inp", "*.out", "*.xyz", "*.coord", "*.log"] if keep_main_files else []
-
         for file in self.work_dir.iterdir():
-            if not any(file.match(pattern) for pattern in patterns_to_keep):
+            if not any(file.match(pattern) for pattern in self.PATTERNS_TO_KEEP):
                 file.unlink()
 
     def get_molecule(self):
@@ -476,7 +469,7 @@ if __name__ == "__main__":
     mol = read("./test/water.xyz", format='xyz')
     
     # Create XTB manager
-    xtb = XTB(config, work_dir="/scratch/2329184/")
+    xtb = XTB(config, xtb_cmd="/home/kreimendahl/software/orca_6.0.1/otool_xtb", work_dir="/scratch/2329184/")
 
     # Prepare input and run calculation
     xtb.prepare_input(molecule=mol)

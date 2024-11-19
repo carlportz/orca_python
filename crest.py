@@ -1,8 +1,10 @@
 import subprocess
 import json
 from pathlib import Path
+import shutil
 import socket
 
+from ase import Atoms
 from ase.io import read, write
 
 class CREST_input:
@@ -62,15 +64,15 @@ class CREST_input:
         required_keys = ["type"]
         for key in required_keys:
             if key not in self.config:
-                raise ValueError(f"Missing required configuration key: {key}")
+                raise ValueError(f"Missing required configuration key: {key}.")
 
         # Validate calculation type
         if self.config["type"].lower() not in self.VALID_TYPES:
-            raise ValueError(f"Invalid calculation type: {self.config['type']}")
+            raise ValueError(f"Invalid calculation type: {self.config['type']}. Valid types are: {', '.join(self.VALID_TYPES.keys())}")
 
         # Validate method if specified
         if "method" in self.config and self.config["method"].lower() not in self.VALID_METHODS:
-            raise ValueError(f"Invalid method: {self.config['method']}")
+            raise ValueError(f"Invalid method: {self.config['method']}. Valid methods are: {', '.join(self.VALID_METHODS.keys())}")
 
     def _generate_command(self):
         """
@@ -133,13 +135,9 @@ class CREST_input:
         
         return "\n".join(filter(bool, blocks))  # filter out empty strings
 
-    def generate_input(self, work_dir, molecule=None):
+    def generate_input(self):
         """
         Generate the complete CREST input file and command line options.
-
-        Args:
-            work_dir (Path): The working directory for the calculation.
-            molecule (ase.Atoms, optional): An ASE Atoms object representing the molecule.
 
         Returns:
             tuple: A tuple containing the command line options and input content.
@@ -167,7 +165,12 @@ class CREST_input:
         Returns:
             str: The complete command line options including the input and coordinates files.
         """
-        command, input_content = self.generate_input(work_dir, molecule=molecule)
+        if not molecule:
+            molecule = Atoms("H", positions=[[0, 0, 0]])
+            print("Warning: No molecule provided. Using default hydrogen atom.")
+
+        # Generate input content and command
+        command, input_content = self.generate_input()
 
         # Write the input file
         if input_content:
@@ -198,6 +201,9 @@ class CREST:
         output_file (Path): Path to the CREST output file.
         results (dict): Parsed results from the CREST calculation.
 
+    Constants:
+        PATTERNS_TO_KEEP (list): List of file patterns to keep after cleaning.
+
     Methods:
         prepare_input(molecule=None):
             Generate CREST input file, if necessary.
@@ -212,8 +218,14 @@ class CREST:
         get_ensemble():
             Return optimized ensemble from CREST output as ASE Atoms object.
     """
+
+    # Constant for file patterns to keep
+    PATTERNS_TO_KEEP = ["*.inp", 
+                        "*.out", 
+                        "*.xyz", 
+                        "*.coord"]
     
-    def __init__(self, config, crest_cmd="/home/kreimendahl/software/crest", work_dir=None):
+    def __init__(self, config, crest_cmd=None, work_dir=None):
         """
         Initialize the CREST class with configuration, command path, and working directory.
 
@@ -224,7 +236,7 @@ class CREST:
         """
         self.config = config
         self.work_dir = Path.cwd().resolve() if work_dir is None else Path(work_dir).resolve()
-        self.crest_cmd = crest_cmd
+        self.crest_cmd = shutil.which("crest") if crest_cmd is None else crest_cmd
         
         # Create working directory if it doesn't exist
         self.work_dir.mkdir(parents=True, exist_ok=True)
@@ -339,25 +351,20 @@ class CREST:
             
         return {"energies": energies}
     
-    def clean_up(self, keep_main_files=True):
+    def clean_up(self):
         """
         Clean up calculation files.
-
-        Args:
-            keep_main_files (bool): If True, keep input, output, and property files.
         """
-        patterns_to_keep = ["*.inp", "*.out", "*.xyz", "*.coord"] if keep_main_files else []
-
         for file in self.work_dir.iterdir():
-            if not any(file.match(pattern) for pattern in patterns_to_keep):
+            if not any(file.match(pattern) for pattern in self.PATTERNS_TO_KEEP):
                 file.unlink()
 
     def get_ensemble(self):
         """
-        Return optimized ensemble from CREST output as ASE Atoms object.
+        Return optimized ensemble from CREST output as a list of ASE Atoms objects.
 
         Returns:
-            ase.Atoms: The optimized ensemble of conformers as an ASE Atoms object.
+            list[ase.Atoms]: The optimized ensemble of conformers as a list of ASE Atoms objects.
 
         Raises:
             ValueError: If no results are available.
@@ -371,7 +378,7 @@ class CREST:
         if not mol_path.exists():
             raise FileNotFoundError(f"Ensemble file not found: {mol_path}")
 
-        # Read last geometry from file
+        # Read all geometries from file
         ensemble = read(mol_path, format="xyz", index=":")
         
         return ensemble
