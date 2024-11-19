@@ -2,12 +2,40 @@ import subprocess
 import json
 import re
 from pathlib import Path
+import shutil
 import socket
 
+from ase import Atoms
 from ase.io import read
 
-class ORCA_input():
-    """Class to generate ORCA input files from a configuration dictionary."""
+class ORCA_input:
+    """
+    Class to generate ORCA input files from a configuration dictionary.
+
+    Attributes:
+        config (dict): Configuration dictionary containing settings for the ORCA input file.
+
+    Constants:
+        VALID_SCF (dict): Valid SCF convergence criteria.
+        VALID_OPT (dict): Valid optimization convergence criteria.
+        VALID_TYPES (dict): Valid calculation types.
+
+    Methods:
+        __init__(config):
+            Initialize with configuration dictionary.
+        _validate_config():
+            Validate the configuration dictionary.
+        _generate_keyword_line():
+            Generate the main ORCA command line.
+        _generate_blocks():
+            Generate the % blocks for parallel execution and memory settings.
+        _generate_xyz_block(molecule=None):
+            Generate the xyz coordinate block.
+        generate_input(molecule=None):
+            Generate the complete ORCA input file content.
+        write_input(filename, molecule=None):
+            Write the ORCA input to a file.
+    """
     
     # Define constants for various settings
     VALID_SCF = {
@@ -33,18 +61,26 @@ class ORCA_input():
         "numfreq": "numfreq",         # Numerical frequency
         "optfreq": "opt freq",        # Optimization + Frequencies
         "ts": "optts",                # Transition state search
-        "scan": "Scan",               # Coordinate scan
-        "goat": "Goat"                # Conformer search
-                                      # Add more as needed...
+        "goat": "goat"                # Conformer search
     }
     
     def __init__(self, config):
-        """Initialize with configuration dictionary."""
+        """
+        Initialize the ORCA_input instance with the provided configuration.
+
+        Args:
+            config (dict): A dictionary containing configuration parameters.
+        """
         self.config = config
         self._validate_config()
         
     def _validate_config(self):
-        """Validate the configuration dictionary."""
+        """
+        Validate the configuration dictionary to ensure all required keys and values are present and correct.
+
+        Raises:
+            ValueError: If any required key is missing or contains an invalid value.
+        """
         required_keys = ["type", "method", "basis"]
         for key in required_keys:
             if key not in self.config:
@@ -62,8 +98,13 @@ class ORCA_input():
         if "opt" in self.config and self.config["opt"].lower() not in self.VALID_OPT:
             raise ValueError(f"Invalid optimization convergence: {self.config['opt']}. Valid values are: {', '.join(self.VALID_OPT.keys())}")
 
-    def _generate_header(self):
-        """Generate the main ORCA command line."""
+    def _generate_keyword_line(self):
+        """
+        Generate the main ORCA keyword line based on the configuration.
+
+        Returns:
+            str: The generated ORCA keyword line as a single string.
+        """
         parts = ["!"]
         
         # Add method and basis set
@@ -98,7 +139,12 @@ class ORCA_input():
         return " ".join(parts)
 
     def _generate_blocks(self):
-        """Generate the % blocks for parallel execution and memory settings."""
+        """
+        Generate the % blocks for parallel execution and memory settings based on the configuration.
+
+        Returns:
+            str: A string containing the concatenated blocks of settings.
+        """
         blocks = []
 
         # Base name block
@@ -138,7 +184,15 @@ class ORCA_input():
 
 
     def _generate_xyz_block(self, molecule=None):
-        """Generate the xyz coordinate block."""
+        """
+        Generate the xyz coordinate block for a molecule.
+
+        Args:
+            molecule (ase.Atoms, optional): An ASE Atoms object representing the molecule.
+
+        Returns:
+            str: A string representing the xyz coordinate block, including charge and multiplicity, formatted for ORCA input files.
+        """
         charge = self.config["charge"] if "charge" in self.config else 0
         multiplicity = self.config["multiplicity"] if "multiplicity" in self.config else 1
         
@@ -156,9 +210,17 @@ class ORCA_input():
             return f"* xyz {charge} {multiplicity}\n\n*"
 
     def generate_input(self, molecule=None):
-        """Generate the complete ORCA input file content."""
+        """
+        Generate the complete ORCA input file content.
+
+        Args:
+            molecule (ase.Atoms, optional): An ASE Atoms object representing the molecule for which the ORCA input file is being generated.
+
+        Returns:
+            str: The complete ORCA input file content as a single string.
+        """
         parts = [
-            self._generate_header(),
+            self._generate_keyword_line(),
             self._generate_blocks(),
             self._generate_xyz_block(molecule=molecule),
         ]
@@ -166,14 +228,44 @@ class ORCA_input():
         return "\n".join(filter(bool, parts))  # filter out empty strings
 
     def write_input(self, filename, molecule=None):
-        """Write the ORCA input to a file."""
+        """
+        Write the ORCA input to a file.
+
+        Args:
+            filename (str): The name of the file to write the input to.
+            molecule (ase.Atoms, optional): The ASE Atoms object to generate the input for. If not provided, a default hydrogen atom is used.
+        """
+        if not molecule:
+            molecule = Atoms("H", positions=[[0, 0, 0]])
+            print("Warning: No molecule provided. Using default hydrogen atom.")
+
         input_content = self.generate_input(molecule=molecule)
         with open(filename, 'w') as f:
             f.write(input_content)
 
 
-class ORCA_output():
-    """Class to handle ORCA properties file parsing with improved organization and error handling."""
+class ORCA_output:
+    """
+    Class to handle ORCA properties file parsing with improved organization and error handling.
+
+    Constants:
+        TYPE_PATTERN (str): Regex pattern to match the type information.
+        DIM_PATTERN (str): Regex pattern to match the array dimensions.
+        VALUE_PATTERN (str): Regex pattern to match the value for numeric types.
+        VALUE_PATTERN_STRING (str): Regex pattern to match the value for string types.
+
+    Methods:
+        get_data_type(type_info: str) -> Optional[str]:
+            Extract the data type from the type information string.
+        get_array_info(info: str) -> Optional[Tuple[int, int]]:
+            Extract the array dimensions from the information string.
+        convert_value(value: str, data_type: str) -> Any:
+            Convert a string value to the appropriate Python type based on the data type.
+        parse_property_line(line: str, current_data: dict) -> Tuple[bool, Optional[str], Optional[Tuple[int, int]], Optional[str]]:
+            Parse a property line starting with '&' and update the current data dictionary.
+        parse_orca_output(content: str) -> dict:
+            Parse the ORCA output file content into a structured dictionary.
+    """
 
     # Constants for regex patterns
     TYPE_PATTERN = r'&Type\s*"([^"]+)"'
@@ -183,19 +275,46 @@ class ORCA_output():
     
     @staticmethod
     def get_data_type(type_info):
-        """Extract data type from type information string."""
+        """
+        Extract the data type from the type information string.
+
+        Args:
+            type_info (str): A string containing type information.
+
+        Returns:
+            str or None: The extracted data type if a match is found, otherwise None.
+        """
         match = re.search(ORCA_output.TYPE_PATTERN, type_info)
+
         return match.group(1) if match else None
 
     @staticmethod
     def get_array_info(info):
-        """Extract array dimensions from information string."""
+        """
+        Extract array dimensions from the information string.
+
+        Args:
+            info (str): The information string containing array dimensions.
+
+        Returns:
+            tuple: A tuple containing two integers representing the array dimensions if the pattern is found, otherwise None.
+        """
         match = re.search(ORCA_output.DIM_PATTERN, info)
+
         return (int(match.group(1)), int(match.group(2))) if match else None
 
     @staticmethod
     def convert_value(value, data_type):
-        """Convert string value to appropriate Python type."""
+        """
+        Convert a string value to the appropriate Python type based on the specified data type.
+
+        Args:
+            value (str): The string value to be converted.
+            data_type (str): The target data type for conversion.
+
+        Returns:
+            Any: The converted value in the appropriate Python type, or None if the input value is empty.
+        """
         value = value.strip()
         if not value:
             return None
@@ -213,7 +332,20 @@ class ORCA_output():
         return converters.get(data_type, lambda x: x)(value)
 
     def parse_property_line(self, line, current_data):
-        """Parse a property line starting with &."""
+        """
+        Parse a property line starting with '&' and update the current data dictionary.
+
+        Args:
+            line (str): The line to be parsed.
+            current_data (dict): The dictionary to be updated with parsed data.
+
+        Returns:
+            tuple: A tuple containing:
+                - bool: Indicates if the line represents an array.
+                - str or None: The key for the property if it is an array, otherwise None.
+                - list or None: The dimensions of the array if it is an array, otherwise None.
+                - str or None: The data type of the property if it is an array, otherwise None.
+        """
         parts = line.split(None, 1)
         key = parts[0][1:]
         
@@ -241,7 +373,15 @@ class ORCA_output():
         return False, None, None, None
 
     def parse_orca_output(self, content):
-        """Parse ORCA output file content into a structured dictionary."""
+        """
+        Parse ORCA output file content into a structured dictionary.
+
+        Args:
+            content (str): The content of the ORCA output file as a string.
+
+        Returns:
+            dict: A dictionary containing parsed data from the ORCA output file.
+        """
         # Clean and split into lines
         lines = [line.strip() for line in content.split('\n') 
                 if line.strip() and not line.startswith('#')]
@@ -302,21 +442,48 @@ class ORCA_output():
 
 
 class ORCA:
-    """Class to manage ORCA calculations: input generation, execution, and output parsing."""
+    """
+    Class to manage ORCA calculations: input generation, execution, and output parsing.
+
+    Attributes:
+        config (dict): Dictionary containing calculation parameters.
+        work_dir (Path): Working directory for the calculation.
+        orca_cmd (str): Path to ORCA executable.
+        base_name (str): Base name for input, output, and property files.
+        input_file (Path): Path to the ORCA input file.
+        output_file (Path): Path to the ORCA output file.
+        property_file (Path): Path to the ORCA property file.
+        results (dict): Parsed results from the ORCA calculation.
+
+    Methods:
+        prepare_input(molecule=None):
+            Generate ORCA input file.
+        read_input(input_file):
+            Read ORCA input from an existing file.
+        run():
+            Execute ORCA calculation and wait for it to complete.
+        check_status():
+            Check if the calculation has completed and was successful.
+        parse_output():
+            Parse ORCA output and property files.
+        clean_up(keep_main_files=True):
+            Clean up calculation files.
+        get_molecule():
+            Return the last molecule from ORCA output as an ASE Atoms object.
+    """
     
     def __init__(self, config, orca_cmd="/home/kreimendahl/software/orca_6.0.1/orca", work_dir=None):
         """
-        Initialize ORCA manager.
-        
+        Initialize the ORCA class with configuration, command path, and working directory.
+
         Args:
-            config: Dictionary containing calculation parameters 
-            work_dir: Working directory for the calculation (default: current directory)
-            orca_cmd: Path to ORCA executable (default: "orca")
+            config (dict): Configuration dictionary containing necessary parameters.
+            orca_cmd (str, optional): Path to the ORCA executable. Defaults to the system path.
+            work_dir (str or Path, optional): Path to the working directory. Defaults to the current working directory.
         """
-        
         self.config = config
         self.work_dir = Path.cwd().resolve() if work_dir is None else Path(work_dir).resolve()
-        self.orca_cmd = orca_cmd
+        self.orca_cmd = shutil.which("orca") if orca_cmd is None else orca_cmd
         
         # Create working directory if it doesn't exist
         self.work_dir.mkdir(parents=True, exist_ok=True)
@@ -329,7 +496,12 @@ class ORCA:
         self.results = None
         
     def prepare_input(self, molecule=None):
-        """Generate ORCA input file."""
+        """
+        Generate ORCA input file and set up file paths.
+
+        Args:
+            molecule (ase.Atoms, optional): The molecular structure to be used in the ORCA calculation. If not provided, a default structure will be used.
+        """
         self.input_file = self.work_dir / f"{self.base_name}.inp"
         self.output_file = self.work_dir / f"{self.base_name}.out"
         self.property_file = self.work_dir / f"{self.base_name}.property.txt"
@@ -339,20 +511,30 @@ class ORCA:
         generator.write_input(self.input_file, molecule=molecule)
 
     def read_input(self, input_file):
-        """Read ORCA input from existing file."""
+        """
+        Read ORCA input from an existing input file.
+
+        Args:
+            input_file (str or Path): The path to the ORCA input file.
+        """
         self.input_file = Path(input_file).resolve()
+        
         if not self.input_file.exists():
             raise FileNotFoundError(f"Input file not found: {self.input_file}")
+        
         self.output_file = self.work_dir / f"{self.base_name}.out"
         self.property_file = self.work_dir / f"{self.base_name}.property.txt"
 
     def run(self):
         """
-        Execute ORCA calculation and wait for it to complete.
-        
-        Returns:
-            subprocess.CompletedProcess
+        Execute the ORCA quantum chemistry software with the prepared input file.
+
+        Raises:
+            ValueError: If the input file is not prepared.
+            subprocess.CalledProcessError: If the ORCA calculation fails.
+            Exception: If there is an error running ORCA.
         """
+        
         if not self.input_file:
             raise ValueError("Input file not prepared. Call prepare_input() first.")
 
@@ -393,7 +575,12 @@ class ORCA:
         self.clean_up()
             
     def check_status(self):
-        """Check if the calculation has completed and was successful."""
+        """
+        Check the status of the ORCA output file.
+
+        Returns:
+            bool: True if the output file exists and contains the line "ORCA TERMINATED NORMALLY" in the last 5 lines, False otherwise.
+        """
         if not self.output_file.exists():
             return False
             
@@ -410,7 +597,12 @@ class ORCA:
             return False
     
     def parse_output(self):
-        """Parse ORCA output and property files."""
+        """
+        Parse ORCA output and property files.
+
+        Returns:
+            dict: A dictionary containing parsed results from the ORCA calculation.
+        """
         if not self.check_status():
             raise RuntimeError("Calculation not complete or failed.")
             
@@ -429,11 +621,10 @@ class ORCA:
     def clean_up(self, keep_main_files=True):
         """
         Clean up calculation files.
-        
-        Args:
-            keep_main_files: If True, keep input, output, and property files
-        """
 
+        Args:
+            keep_main_files (bool): If True, keep input, output, and property files.
+        """
         patterns_to_keep = ["*.inp", "*.out", "*.property.txt", "*.xyz"] if keep_main_files else []
 
         for file in self.work_dir.iterdir():
@@ -441,7 +632,16 @@ class ORCA:
                 file.unlink()
 
     def get_molecule(self):
-        """Return last molecule from ORCA output as ASE Atoms object."""
+        """
+        Return the last molecule from ORCA output as an ASE Atoms object.
+
+        Returns:
+            ase.Atoms: The last geometry of the calculation as an ASE Atoms object.
+
+        Raises:
+            ValueError: If no results are available.
+            FileNotFoundError: If the geometry file is not found.
+        """
         if not self.results:
             raise ValueError("No results available. Run calculation first.")
         
