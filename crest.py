@@ -1,13 +1,10 @@
-import os
 import subprocess
 import json
-import re
 import numpy as np
 from pathlib import Path
 import socket
 
-from ase.io import read
-
+from ase.io import read, write
 
 class CREST_input():
     """Class to generate Crest input files from a configuration dictionary."""
@@ -95,21 +92,11 @@ class CREST_input():
         
         return "\n".join(filter(bool, blocks))  # filter out empty strings
 
-    def generate_input(self, work_dir, xyz_file=None, molecule=None):
-        """Generate the complete Crest input file, commandline options and coordinate block."""
+    def generate_input(self, work_dir, molecule=None):
+        """Generate the complete Crest input file and commandline options."""
 
         # Generate the main command line options
         command = self._generate_command()
-
-        # Generate input coordinates
-        input_xyz_file = work_dir / "crest_input.xyz"
-
-        if xyz_file:
-            Molecule().read_from_xyz(xyz_file)[-1].write_to_xyz(input_xyz_file)
-        elif molecule:
-            molecule.write_to_xyz(input_xyz_file)
-        else:
-            raise ValueError("No input coordinates provided.")
 
         # Generate the input blocks, if necessary
         if "constraints" in self.config:
@@ -117,11 +104,11 @@ class CREST_input():
         else:
             input_content = None
 
-        return command, input_xyz_file, input_content
+        return command, input_content
 
-    def write_input(self, filename, work_dir, xyz_file=None, molecule=None):
+    def write_input(self, filename, work_dir, molecule=None):
         """Write the Crest input and coordinates to a file, and extend the command line options."""
-        command, input_xyz_file, input_content = self.generate_input(work_dir, xyz_file=xyz_file, molecule=molecule)
+        command, input_content = self.generate_input(work_dir, molecule=molecule)
 
         # Write the input file
         if input_content:
@@ -130,8 +117,12 @@ class CREST_input():
             
             command += f" --cinp {filename}"
 
+        # Write the coordinates to a separate file
+        coords_file = work_dir / "crest_input.xyz"
+        write(coords_file, molecule, format='xyz')
+
         # Add coordinates file to the command
-        command = f"{input_xyz_file}" + command
+        command = f"{coords_file}" + command
 
         return command
 
@@ -161,15 +152,14 @@ class CREST:
         self.output_file = None
         self.results = None
         
-    def prepare_input(self, xyz_file=None, molecule=None):
+    def prepare_input(self, molecule=None):
         """Generate Crest input file, if necessary."""
         self.input_file = self.work_dir / "crest.inp"
         self.output_file = self.work_dir / "crest.out"
-        self.xyz_file = Path(xyz_file).resolve() if xyz_file else None
         
         # Generate input file if necessary
         generator = CREST_input(self.config)
-        self.cmd_options = generator.write_input(self.input_file, self.work_dir, xyz_file=xyz_file, molecule=molecule)
+        self.cmd_options = generator.write_input(self.input_file, self.work_dir, molecule=molecule)
         
     def run(self):
         """
@@ -181,11 +171,13 @@ class CREST:
         if not self.input_file:
             raise ValueError("Input file not prepared. Call prepare_input() first.")
 
-        print(f"Running Crest in {self.work_dir} on {socket.gethostname()}")
+        print(f"Crest running in {self.work_dir} on {socket.gethostname()}")
             
+        # Clean up temporary files
+        self.clean_up()
+
         # Prepare command
         cmd = f"{self.crest_cmd} {self.cmd_options} > {self.output_file}"
-        print(f"Running command: {cmd}")
         
         try:
             # Run and wait for completion
@@ -210,7 +202,7 @@ class CREST:
         self.results = self.parse_output()
 
         # Add configuration to results
-        self.results["Configuration"] = self.config
+        self.results["config"] = self.config
 
         # Clean up temporary files
         self.clean_up()
@@ -240,7 +232,8 @@ class CREST:
         # Parse energy file if it exists
         energy_file = self.work_dir / "crest.energies"
         if energy_file.exists():
-            energies = np.loadtxt(energy_file, usecols=(1,)).tolist()
+            with open(energy_file, 'r') as f:
+                energies = [float(line.split()[1]) for line in f if line.strip()]
         else:
             print("Warning: Energy file not found.")
             energies = None
@@ -286,19 +279,19 @@ if __name__ == "__main__":
     # Example configuration
     config = {
         "type": "conf",
-        #"method": "gfn2",
+        "method": "gfn2",
         "nprocs": "20",
         #"constraints": "dihedral: 1,2,3,4,90.0",
-        "constraints": "angle: 2,3,4,180.0",
-        "force constant": "0.25",
+        #"constraints": "angle: 2,3,4,180.0",
+        #"force constant": "0.25",
         #"solvent": "water",
     }
 
     # Read molecule from xyz file
-    mol = Molecule().read_from_xyz("./test/imine_52.xyz")[-1]
-    
+    mol = read("./test/n-butane.xyz", format='xyz')
+
     # Create CREST manager
-    crest = CREST(config, work_dir="/scratch/2328635/")
+    crest = CREST(config, work_dir="/scratch/2329184/")
 
     # Prepare input and run calculation
     crest.prepare_input(molecule=mol)

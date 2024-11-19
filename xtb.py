@@ -1,12 +1,8 @@
-import os
 import subprocess
 import json
-import re
-import numpy as np
 from pathlib import Path
 import socket
 
-from ase import Atoms
 from ase.io import read, write
 
 class XTB_input():
@@ -112,7 +108,7 @@ class XTB_input():
         return "\n".join(filter(bool, blocks))  # filter out empty strings
 
     def generate_input(self, work_dir, molecule=None):
-        """Generate the complete XTB input file, commandline options and coordinate block."""
+        """Generate the complete XTB input file and commandline options."""
 
         # Generate the main command line options
         command = self._generate_command()
@@ -235,8 +231,11 @@ class XTB:
         if not self.input_file:
             raise ValueError("Input file not prepared. Call prepare_input() first.")
 
-        print(f"Running XTB in {self.work_dir} on {socket.gethostname()}")
-            
+        print(f"xtb running in {self.work_dir} on {socket.gethostname()}")
+        
+        # Clean up temporary files
+        self.clean_up()
+
         # Prepare command
         cmd = f"{self.xtb_cmd} {self.cmd_options} > {self.output_file}"
         
@@ -263,7 +262,7 @@ class XTB:
         self.results = self.parse_output()
 
         # Add configuration to results
-        self.results["Configuration"] = self.config
+        self.results["config"] = self.config
 
         # Clean up temporary files
         self.clean_up()
@@ -345,7 +344,7 @@ if __name__ == "__main__":
     mol = read("./test/water.xyz", format='xyz')
     
     # Create XTB manager
-    xtb = XTB(config, work_dir="/scratch/2328635/")
+    xtb = XTB(config, work_dir="/scratch/2329184/")
 
     # Prepare input and run calculation
     xtb.prepare_input(molecule=mol)

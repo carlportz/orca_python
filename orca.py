@@ -4,8 +4,7 @@ import re
 from pathlib import Path
 import socket
 
-from ase import Atoms
-from ase.io import read, write
+from ase.io import read
 
 class ORCA_input():
     """Class to generate ORCA input files from a configuration dictionary."""
@@ -38,8 +37,6 @@ class ORCA_input():
         "goat": "Goat"                # Conformer search
                                       # Add more as needed...
     }
-
-    BOHR_TO_ANGSTROM = 0.529177210544
     
     def __init__(self, config):
         """Initialize with configuration dictionary."""
@@ -359,8 +356,11 @@ class ORCA:
         if not self.input_file:
             raise ValueError("Input file not prepared. Call prepare_input() first.")
 
-        print(f"Running ORCA in {self.work_dir} on {socket.gethostname()}")
-            
+        print(f"ORCA running in {self.work_dir} on {socket.gethostname()}")
+
+        # Clean up temporary files
+        self.clean_up()
+        
         # Prepare command
         cmd = f"{self.orca_cmd} {self.input_file} > {self.output_file}"
         
@@ -387,7 +387,7 @@ class ORCA:
         self.results = self.parse_output()
 
         # Add configuration to results
-        self.results["Configuration"] = self.config
+        self.results["config"] = self.config
 
         # Clean up temporary files
         self.clean_up()
@@ -482,7 +482,7 @@ if __name__ == "__main__":
     mol = read("./test/water.xyz", format="xyz")
     
     # Create ORCA manager
-    orca = ORCA(config, work_dir="/scratch/2328635/")
+    orca = ORCA(config, work_dir="/scratch/2329184/")
 
     # Prepare input and run calculation
     orca.prepare_input(molecule=mol)
