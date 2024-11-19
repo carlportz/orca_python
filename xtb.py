@@ -5,8 +5,29 @@ import socket
 
 from ase.io import read, write
 
-class XTB_input():
-    """Class to generate XTB input files from a configuration dictionary."""
+class XTB_input:
+    """
+    Class to generate XTB input files from a configuration dictionary.
+
+    Attributes:
+        VALID_TYPES (dict): Valid XTB calculation types.
+        VALID_METHODS (dict): Valid XTB methods.
+        config (dict): Configuration dictionary.
+
+    Methods:
+        __init__(config):
+            Initialize the XTB_input object with a configuration dictionary.
+        _validate_config():
+            Validate the configuration dictionary.
+        _generate_command():
+            Generate the main XTB command line options based on the configuration.
+        _generate_blocks():
+            Generate the input blocks for geometry constraints and relaxed scans.
+        generate_input(work_dir, molecule=None):
+            Generate the complete XTB input file and command line options.
+        write_input(filename, work_dir, molecule=None):
+            Write the XTB input and coordinates to a file, and extend the command line options.
+    """
     
     # Valid XTB calculation types
     VALID_TYPES = {
@@ -27,12 +48,22 @@ class XTB_input():
     }
     
     def __init__(self, config):
-        """Initialize with configuration dictionary."""
+        """
+        Initialize the XTB_input object with a configuration dictionary.
+
+        Args:
+            config (dict): A dictionary containing configuration parameters.
+        """
         self.config = config
         self._validate_config()
         
     def _validate_config(self):
-        """Validate the configuration dictionary."""
+        """
+        Validate the configuration dictionary.
+
+        Raises:
+            ValueError: If any required key is missing or contains an invalid value.
+        """
         required_keys = ["type"]
         for key in required_keys:
             if key not in self.config:
@@ -47,7 +78,12 @@ class XTB_input():
             raise ValueError(f"Invalid method: {self.config['method']}")
 
     def _generate_command(self):
-        """Generate the main XTB command line options."""
+        """
+        Generate the main XTB command line options.
+
+        Returns:
+            str: The generated XTB command line options as a single string.
+        """
         parts = [""]
         
         # Add calculation type
@@ -80,13 +116,19 @@ class XTB_input():
         if "nprocs" in self.config:
             parts.append(f"--parallel {self.config['nprocs']}")
 
-        # Add other keywords are specified
+        # Add other keywords if specified
         if "keywords" in self.config:
             parts.append(self.config["keywords"])
                 
         return " ".join(parts)
 
     def _generate_blocks(self):
+        """
+        Generate the input blocks for geometry constraints and relaxed scans.
+
+        Returns:
+            str: A string containing the concatenated blocks of settings.
+        """
         blocks = []
 
         # Geometry constraints block
@@ -107,9 +149,13 @@ class XTB_input():
         
         return "\n".join(filter(bool, blocks))  # filter out empty strings
 
-    def generate_input(self, work_dir, molecule=None):
-        """Generate the complete XTB input file and commandline options."""
+    def generate_input(self):
+        """
+        Generate the complete XTB input file and command line options.
 
+        Returns:
+            tuple: A tuple containing the command line options and input content.
+        """
         # Generate the main command line options
         command = self._generate_command()
 
@@ -122,8 +168,18 @@ class XTB_input():
         return command, input_content
 
     def write_input(self, filename, work_dir, molecule=None):
-        """Write the XTB input and coordinates to a file, and extend the command line options."""
-        command, input_content = self.generate_input(work_dir, molecule=molecule)
+        """
+        Write the XTB input and coordinates to a file, and extend the command line options.
+
+        Args:
+            filename (str): The name of the file to write the input to.
+            work_dir (Path): The working directory for the calculation.
+            molecule (ase.Atoms, optional): An ASE Atoms object representing the molecule.
+
+        Returns:
+            str: The complete command line options including the input and coordinates files.
+        """
+        command, input_content = self.generate_input()
 
         # Write the input file
         if input_content:
@@ -142,11 +198,30 @@ class XTB_input():
         return command
 
 
-class XTB_output():
-    """Class to handle XTB output file parsing."""
+class XTB_output:
+    """
+    Class to handle XTB output file parsing.
+
+    Methods:
+        _find_property_section(content: str) -> int:
+            Find the section in the output file containing property data.
+        parse_xtb_output(content: str) -> dict:
+            Parse XTB output file SUMMARY into a structured dictionary.
+    """
 
     def _find_property_section(self, content):
-        """Find the section in the output file containing property data."""
+        """
+        Find the section in the output file containing property data.
+
+        Args:
+            content (str): The content of the XTB output file as a string.
+
+        Returns:
+            int: The starting index of the property section.
+
+        Raises:
+            ValueError: If the SUMMARY section is not found in the file content.
+        """
         lines = content.split('\n')
         start_idx = -1
         
@@ -161,7 +236,15 @@ class XTB_output():
         return start_idx
 
     def parse_xtb_output(self, content):
-        """Parse XTB output file SUMMARY into a structured dictionary."""
+        """
+        Parse XTB output file SUMMARY into a structured dictionary.
+
+        Args:
+            content (str): The content of the XTB output file as a string.
+
+        Returns:
+            dict: A dictionary containing parsed data from the XTB output file.
+        """
         result = {}   
         start_idx = self._find_property_section(content)
         lines = content.split('\n')
@@ -187,18 +270,42 @@ class XTB_output():
 
 
 class XTB:
-    """Class to manage XTB calculations: input generation, execution, and output parsing."""
+    """
+    Class to manage XTB calculations: input generation, execution, and output parsing.
+
+    Attributes:
+        config (dict): Dictionary containing calculation parameters.
+        work_dir (Path): Working directory for the calculation.
+        xtb_cmd (str): Path to XTB executable.
+        base_name (str): Base name for input, output, and property files.
+        input_file (Path): Path to the XTB input file.
+        output_file (Path): Path to the XTB output file.
+        results (dict): Parsed results from the XTB calculation.
+
+    Methods:
+        prepare_input(molecule=None):
+            Generate XTB input file, if necessary.
+        run():
+            Execute XTB calculation and wait for it to complete.
+        check_status():
+            Check if the calculation has completed and was successful.
+        parse_output():
+            Parse XTB output file.
+        clean_up(keep_main_files=True):
+            Clean up calculation files.
+        get_molecule():
+            Return the last molecule from XTB output as an ASE Atoms object.
+    """
     
     def __init__(self, config, xtb_cmd="/home/kreimendahl/software/orca_6.0.1/otool_xtb", work_dir=None):
         """
-        Initialize XTB manager.
-        
+        Initialize the XTB class with configuration, command path, and working directory.
+
         Args:
-            config: Dictionary containing calculation parameters 
-            work_dir: Working directory for the calculation (default: current directory)
-            xtb_cmd: Path to xtb executable
+            config (dict): Configuration dictionary containing necessary parameters.
+            xtb_cmd (str, optional): Path to the XTB executable. Defaults to the system path.
+            work_dir (str or Path, optional): Path to the working directory. Defaults to the current working directory.
         """
-            
         self.config = config
         self.work_dir = Path.cwd().resolve() if work_dir is None else Path(work_dir).resolve()
         self.xtb_cmd = xtb_cmd
@@ -213,7 +320,12 @@ class XTB:
         self.results = None
         
     def prepare_input(self, molecule=None):
-        """Generate XTB input file, if necessary."""
+        """
+        Generate XTB input file, if necessary.
+
+        Args:
+            molecule (ase.Atoms, optional): The molecular structure to be used in the XTB calculation. If not provided, a default structure will be used.
+        """
         self.input_file = self.work_dir / f"{self.base_name}.inp"
         self.output_file = self.work_dir / f"{self.base_name}.out"
         
@@ -224,9 +336,11 @@ class XTB:
     def run(self):
         """
         Execute XTB calculation and wait for it to complete.
-        
-        Returns:
-            subprocess.CompletedProcess
+
+        Raises:
+            ValueError: If the input file is not prepared.
+            subprocess.CalledProcessError: If the XTB calculation fails.
+            Exception: If there is an error running XTB.
         """
         if not self.input_file:
             raise ValueError("Input file not prepared. Call prepare_input() first.")
@@ -268,14 +382,24 @@ class XTB:
         self.clean_up()
 
     def check_status(self):
-        """Check if the calculation has completed and was successful."""
+        """
+        Check if the calculation has completed and was successful.
+
+        Returns:
+            bool: True if the output file exists, False otherwise.
+        """
         if not self.output_file.exists():
             return False
         else:
             return True
             
     def parse_output(self):
-        """Parse XTB output file."""
+        """
+        Parse XTB output file.
+
+        Returns:
+            dict: A dictionary containing parsed results from the XTB calculation.
+        """
         if not self.check_status():
             raise RuntimeError("Calculation not complete or failed.")
             
@@ -294,11 +418,10 @@ class XTB:
     def clean_up(self, keep_main_files=True):
         """
         Clean up calculation files.
-        
-        Args:
-            keep_main_files: If True, keep input, output, and property files
-        """
 
+        Args:
+            keep_main_files (bool): If True, keep input, output, and property files.
+        """
         patterns_to_keep = ["*.inp", "*.out", "*.xyz", "*.coord", "*.log"] if keep_main_files else []
 
         for file in self.work_dir.iterdir():
@@ -306,7 +429,16 @@ class XTB:
                 file.unlink()
 
     def get_molecule(self):
-        """Return last molecule from XTB output as ASE Atoms object."""
+        """
+        Return the last molecule from XTB output as an ASE Atoms object.
+
+        Returns:
+            ase.Atoms: The last geometry of the calculation as an ASE Atoms object.
+
+        Raises:
+            ValueError: If no results are available.
+            FileNotFoundError: If the geometry file is not found.
+        """
         if not self.results:
             raise ValueError("No results available. Run calculation first.")
         
