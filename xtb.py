@@ -226,6 +226,7 @@ class XTB_output:
         """
         result = {"Properties": []}
         lines = content.split('\n')
+        found = False
         
         # Process lines
         for line in lines:
