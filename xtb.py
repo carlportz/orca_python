@@ -226,7 +226,8 @@ class XTB_output:
         """
         result = {"Properties": []}
         lines = content.split('\n')
-        found = False
+        summary_found = False
+        dipole_found = False
         
         # Process lines
         for line in lines:
@@ -235,16 +236,16 @@ class XTB_output:
             # Start of property section
             if 'SUMMARY' in line:
                 summary = {}
-                found = True
+                summary_found = True
                 continue
             
             # End of property section
-            if '..........' in line and found:
+            if '..........' in line and summary_found:
                 result["Properties"].append(summary)
-                found = False
+                summary_found = False
             
             # Parse properties
-            if found:
+            if summary_found:
                 # Remove leading/trailing ':' and split by whitespace
                 clean_line = line.replace(':', '').strip()
                 parts = clean_line.split()
@@ -253,7 +254,22 @@ class XTB_output:
                     # Join all parts except the last two (value and unit) as the key
                     key = ' '.join(parts[:-2]).strip()
                     value = float(parts[-2])  # Convert value to float
-                    summary[key] = value     
+                    summary[key] = value 
+
+            # Start of dipole section
+            if 'molecular dipole' in line:
+                dipole_found = True
+                continue
+
+            # End of dipole section
+            if 'molecular quadrupole' in line and dipole_found:
+                result["Properties"][-1]["Dipole"] = dipole
+                dipole_found = False
+
+            # Parse dipole
+            if dipole_found and 'full:' in line:
+                parts = line.strip().split()
+                dipole = [float(x) for x in parts[1:4]]
         
         return result
 
