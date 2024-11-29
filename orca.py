@@ -8,7 +8,7 @@ import socket
 from ase import Atoms
 from ase.io import read
 
-class ORCA_input:
+class OrcaInput:
     """
     Class to generate ORCA input files from a configuration dictionary.
 
@@ -246,7 +246,7 @@ class ORCA_input:
             f.write(input_content)
 
 
-class ORCA_output:
+class OrcaOutput:
     """
     Class to handle ORCA properties file parsing with improved organization and error handling.
 
@@ -286,7 +286,7 @@ class ORCA_output:
         Returns:
             str or None: The extracted data type if a match is found, otherwise None.
         """
-        match = re.search(ORCA_output.TYPE_PATTERN, type_info)
+        match = re.search(OrcaOutput.TYPE_PATTERN, type_info)
 
         return match.group(1) if match else None
 
@@ -301,7 +301,7 @@ class ORCA_output:
         Returns:
             tuple: A tuple containing two integers representing the array dimensions if the pattern is found, otherwise None.
         """
-        match = re.search(ORCA_output.DIM_PATTERN, info)
+        match = re.search(OrcaOutput.DIM_PATTERN, info)
 
         return (int(match.group(1)), int(match.group(2))) if match else None
 
@@ -366,7 +366,7 @@ class ORCA_output:
             return True, key, array_dims, data_type
             
         # Extract value based on data type
-        pattern = ORCA_output.VALUE_PATTERN if data_type in ("Double", "Integer") else ORCA_output.VALUE_PATTERN_STRING
+        pattern = OrcaOutput.VALUE_PATTERN if data_type in ("Double", "Integer") else OrcaOutput.VALUE_PATTERN_STRING
         value_match = re.search(pattern, value_info)
         
         if value_match:
@@ -443,7 +443,7 @@ class ORCA_output:
         return result
 
 
-class ORCA:
+class Orca:
     """
     Class to manage ORCA calculations: input generation, execution, and output parsing.
 
@@ -518,7 +518,7 @@ class ORCA:
         self.property_file = self.work_dir / f"{self.base_name}.property.txt"
         
         # Generate input file
-        generator = ORCA_input(self.config)
+        generator = OrcaInput(self.config)
         generator.write_input(self.input_file, molecule=molecule)
 
     def read_input(self, input_file):
@@ -618,7 +618,7 @@ class ORCA:
         if not self.check_status():
             raise RuntimeError("Calculation not complete or failed.")
             
-        parser = ORCA_output()
+        parser = OrcaOutput()
         
         # Parse property file if it exists
         if self.property_file.exists():
@@ -681,7 +681,7 @@ if __name__ == "__main__":
     mol = read("./test/water.xyz", format="xyz")
     
     # Create ORCA manager
-    orca = ORCA(config, work_dir="./test/orca")
+    orca = Orca(config, work_dir="./test/orca")
 
     # Prepare input and run calculation
     orca.prepare_input(molecule=mol)

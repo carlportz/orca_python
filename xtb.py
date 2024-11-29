@@ -7,7 +7,7 @@ import socket
 from ase import Atoms
 from ase.io import read, write
 
-class XTB_input:
+class XtbInput:
     """
     Class to generate XTB input files from a configuration dictionary.
 
@@ -205,7 +205,7 @@ class XTB_input:
         return command
 
 
-class XTB_output:
+class XtbOutput:
     """
     Class to handle XTB output file parsing.
 
@@ -274,7 +274,7 @@ class XTB_output:
         return result
 
 
-class XTB:
+class Xtb:
     """
     Class to manage XTB calculations: input generation, execution, and output parsing.
 
@@ -345,7 +345,7 @@ class XTB:
         self.output_file = self.work_dir / f"{self.base_name}.out"
         
         # Generate input file if necessary
-        generator = XTB_input(self.config)
+        generator = XtbInput(self.config)
         self.cmd_options = generator.write_input(self.input_file, self.work_dir, molecule=molecule)
         
     def run(self):
@@ -419,7 +419,7 @@ class XTB:
         if not self.check_status():
             raise RuntimeError("Calculation not complete or failed.")
             
-        parser = XTB_output()
+        parser = XtbOutput()
         
         # Parse output file if it exists
         if self.output_file.exists():
@@ -479,7 +479,7 @@ if __name__ == "__main__":
     mol = read("./test/water.xyz", format='xyz')
     
     # Create XTB manager
-    xtb = XTB(config, work_dir="./test/xtb")
+    xtb = Xtb(config, work_dir="./test/xtb")
 
     # Prepare input and run calculation
     xtb.prepare_input(molecule=mol)

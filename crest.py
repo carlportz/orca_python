@@ -7,7 +7,7 @@ import socket
 from ase import Atoms
 from ase.io import read, write
 
-class CREST_input:
+class CrestInput:
     """
     Class to generate CREST input files from a configuration dictionary.
 
@@ -189,7 +189,7 @@ class CREST_input:
         return command
 
 
-class CREST:
+class Crest:
     """
     Class to manage CREST calculations: input generation, execution, and output parsing.
 
@@ -257,7 +257,7 @@ class CREST:
         self.output_file = self.work_dir / "crest.out"
         
         # Generate input file if necessary
-        generator = CREST_input(self.config)
+        generator = CrestInput(self.config)
         self.cmd_options = generator.write_input(self.input_file, self.work_dir, molecule=molecule)
         
     def run(self):
@@ -399,7 +399,7 @@ if __name__ == "__main__":
     mol = read("./test/n-butane.xyz", format='xyz')
 
     # Create CREST manager
-    crest = CREST(config, work_dir="./test/crest")
+    crest = Crest(config, work_dir="./test/crest")
 
     # Prepare input and run calculation
     crest.prepare_input(molecule=mol)
