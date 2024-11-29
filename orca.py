@@ -549,7 +549,8 @@ class ORCA:
         if not self.input_file:
             raise ValueError("Input file not prepared. Call prepare_input() first.")
 
-        print(f"ORCA running in {self.work_dir} on {socket.gethostname()}")
+        if "verbose" in self.config and self.config["verbose"]:
+            print(f"ORCA running in {self.work_dir} on {socket.gethostname()}")
 
         # Clean up temporary files
         self.clean_up()
@@ -664,9 +665,6 @@ class ORCA:
 
 # Example usage
 if __name__ == "__main__":
-
-    # Check if the current hostname is not wuxcs
-    assert socket.gethostname() != "wuxcs", "This script should not be run on the wuxcs."
     
     # Example configuration
     config = {
@@ -674,13 +672,8 @@ if __name__ == "__main__":
         "type": "opt",
         "method": "b3lyp",
         "basis": "6-31g",
-        "nprocs": "20",
-        "mem_per_proc": "5000",
-        #"constraints": "D 0 1 2 3 180.0 C",
-        #"scan": "D 0 1 2 3 = 180.0, 0.0, 3",
-        #"solvent": "cpcm(water)",
-        #"iroot": "1",
-        #"nroots": "5",
+        "nprocs": "2",
+        "mem_per_proc": "3000",
         "keywords": "nopop smallprint",
     }
 
@@ -688,7 +681,7 @@ if __name__ == "__main__":
     mol = read("./test/water.xyz", format="xyz")
     
     # Create ORCA manager
-    orca = ORCA(config, work_dir="/scratch/2329184/")
+    orca = ORCA(config, work_dir="./test/orca")
 
     # Prepare input and run calculation
     orca.prepare_input(molecule=mol)

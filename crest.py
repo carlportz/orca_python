@@ -272,7 +272,8 @@ class CREST:
         if not self.input_file:
             raise ValueError("Input file not prepared. Call prepare_input() first.")
 
-        print(f"Crest running in {self.work_dir} on {socket.gethostname()}")
+        if "verbose" in self.config and self.config["verbose"]:
+            print(f"Crest running in {self.work_dir} on {socket.gethostname()}")
             
         # Clean up temporary files
         self.clean_up()
@@ -386,26 +387,19 @@ class CREST:
 
 # Example usage
 if __name__ == "__main__":
-
-    # Check if the current hostname is not wuxcs
-    assert socket.gethostname() != "wuxcs", "This script should not be run on the wuxcs."
     
     # Example configuration
     config = {
         "type": "conf",
         "method": "gfn2",
-        "nprocs": "20",
-        #"constraints": "dihedral: 1,2,3,4,90.0",
-        #"constraints": "angle: 2,3,4,180.0",
-        #"force constant": "0.25",
-        #"solvent": "water",
+        "nprocs": "10",
     }
 
     # Read molecule from xyz file
     mol = read("./test/n-butane.xyz", format='xyz')
 
     # Create CREST manager
-    crest = CREST(config, work_dir="/scratch/2329184/")
+    crest = CREST(config, work_dir="./test/crest")
 
     # Prepare input and run calculation
     crest.prepare_input(molecule=mol)

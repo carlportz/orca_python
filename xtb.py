@@ -360,7 +360,8 @@ class XTB:
         if not self.input_file:
             raise ValueError("Input file not prepared. Call prepare_input() first.")
 
-        print(f"xtb running in {self.work_dir} on {socket.gethostname()}")
+        if "verbose" in self.config and self.config["verbose"]:
+            print(f"xtb running in {self.work_dir} on {socket.gethostname()}")
         
         # Clean up temporary files
         self.clean_up()
@@ -465,28 +466,20 @@ class XTB:
 
 # Example usage
 if __name__ == "__main__":
-
-    # Check if the current hostname is not wuxcs
-    assert socket.gethostname() != "wuxcs", "This script should not be run on the wuxcs."
     
     # Example configuration
     config = {
-        "base": "test",
-        "type": "optfreq",
+        "base": "xtb",
+        "type": "opt",
         "method": "gfn2",
-        "charge": "0",
-        "multiplicity": "1",
         "nprocs": "2",
-        "constraints": "dihedral: 1,2,3,4,90.0",
-        #"scan": "D 0 1 2 3 = 180.0, 0.0, 3",
-        "solvent": "water",
     }
 
     # Read molecule from xyz file
     mol = read("./test/water.xyz", format='xyz')
     
     # Create XTB manager
-    xtb = XTB(config, xtb_cmd="/home/kreimendahl/software/orca_6.0.1/otool_xtb", work_dir="/scratch/2329184/")
+    xtb = XTB(config, work_dir="./test/xtb")
 
     # Prepare input and run calculation
     xtb.prepare_input(molecule=mol)
