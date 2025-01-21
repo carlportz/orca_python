@@ -182,6 +182,13 @@ class OrcaInput:
                 blocks.append(f"          iroot {self.config['iroot']}")
             blocks.append("end")
 
+        # Goat block
+        if "goat" in self.config:
+            blocks.append(f"%goat")
+            for c in self.config["goat"].split(';'):
+                blocks.append(f"          {c}")
+            blocks.append("end")
+
         return "\n".join(blocks)
 
 
