@@ -62,7 +62,7 @@ class OrcaInput:
         "freq": "freq",               # Frequency calculation
         "numfreq": "numfreq",         # Numerical frequency
         "optfreq": "opt freq",        # Optimization + Frequencies
-        "ts": "optts",                # Transition state search
+        "ts": "optts freq",           # Transition state search
         "goat": "goat"                # Conformer search
     }
     
@@ -151,7 +151,7 @@ class OrcaInput:
 
         # Base name block
         if "base" in self.config:
-            blocks.append(f'%base\n         "{self.config["base"]}"')
+            blocks.append(f'%base\n          "{self.config["base"]}"')
         
         # Parallel execution block
         if "nprocs" in self.config:
@@ -176,16 +176,29 @@ class OrcaInput:
             blocks.append("          end\nend")
 
         # Excited states block
-        if "nroots" in self.config:
-            blocks.append(f"%tddft\n            nroots {self.config['nroots']}")
-            if "iroot" in self.config:
-                blocks.append(f"          iroot {self.config['iroot']}")
+        if "tddft" in self.config:
+            blocks.append(f"%tddft")
+            for c in self.config["tddft"].split(';'):
+                blocks.append(f"          {c}")
             blocks.append("end")
 
         # Goat block
         if "goat" in self.config:
             blocks.append(f"%goat")
             for c in self.config["goat"].split(';'):
+                blocks.append(f"          {c}")
+            blocks.append("end")
+
+        # Geom block
+        if "geom" in self.config:
+            blocks.append(f"%geom")
+            for c in self.config["geom"].split(';'):
+                blocks.append(f"          {c}")
+            blocks.append("end")
+            
+        if "freq" in self.config and self.config["type"] in ["freq", "optfreq", "ts"]:
+            blocks.append(f"%freq")
+            for c in self.config["freq"].split(';'):
                 blocks.append(f"          {c}")
             blocks.append("end")
 
