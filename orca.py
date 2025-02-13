@@ -42,7 +42,6 @@ class OrcaInput:
         "loose": "LooseScf",
         "tight": "TightScf",
         "verytight": "VeryTightScf",
-        None: ""
     }
     
     # Valid ORCA optimization convergence criteria
@@ -50,7 +49,6 @@ class OrcaInput:
         "loose": "LooseOpt",
         "tight": "TightOpt",
         "verytight": "VeryTightOpt",
-        None: ""
     }
     
     # Valid ORCA calculation types
@@ -110,7 +108,8 @@ class OrcaInput:
         parts = ["!"]
         
         # Add method and basis set
-        parts.append(self.config["method"])
+        if "functional" not in self.config["method"] and "core" not in self.config["method"] and "exchange" not in self.config["method"]:
+            parts.append(self.config["method"])
         parts.append(self.config["basis"])
         
         # Add calculation type
@@ -199,6 +198,18 @@ class OrcaInput:
         if "freq" in self.config and self.config["type"] in ["freq", "optfreq", "ts"]:
             blocks.append(f"%freq")
             for c in self.config["freq"].split(';'):
+                blocks.append(f"          {c}")
+            blocks.append("end")
+
+        if "functional" in self.config["method"] or "correlation" in self.config["method"] or "exchange" in self.config["method"]:
+            blocks.append(f"%method")
+            for c in self.config["method"].split(';'):
+                blocks.append(f"          {c}")
+            blocks.append("end")
+
+        if "symmetry" in self.config:
+            blocks.append(f"%symmetry")
+            for c in self.config["symmetry"].split(';'):
                 blocks.append(f"          {c}")
             blocks.append("end")
 
