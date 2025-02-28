@@ -213,6 +213,12 @@ class OrcaInput:
                 blocks.append(f"          {c}")
             blocks.append("end")
 
+        if "casscf" in self.config:
+            blocks.append(f"%casscf")
+            for c in self.config["casscf"].split(';'):
+                blocks.append(f"          {c}")
+            blocks.append("end")
+
         return "\n".join(blocks)
 
 
