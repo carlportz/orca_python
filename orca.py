@@ -39,16 +39,16 @@ class OrcaInput:
     
     # Valid ORCA SCF convergence criteria
     VALID_SCF = {
-        "loose": "LooseScf",
-        "tight": "TightScf",
-        "verytight": "VeryTightScf",
+        "loose": "loosescf",
+        "tight": "tightscf",
+        "verytight": "verytightscf",
     }
     
     # Valid ORCA optimization convergence criteria
     VALID_OPT = {
-        "loose": "LooseOpt",
-        "tight": "TightOpt",
-        "verytight": "VeryTightOpt",
+        "loose": "looseopt",
+        "tight": "tightopt",
+        "verytight": "verytightopt",
     }
     
     # Valid ORCA calculation types
@@ -164,6 +164,10 @@ class OrcaInput:
         if "mem_per_proc" in self.config:
             blocks.append(f"%maxcore\n          {self.config['mem_per_proc']}")
 
+        # MO read block
+        if "moread" in self.config:
+            blocks.append(f'''%moinp\n          "{self.config['moread']}"''')
+
         # Geometry constraints block
         if "constraints" in self.config:
             blocks.append(f"%geom\n          constraints")
@@ -223,9 +227,6 @@ class OrcaInput:
                 blocks.append(f"          {c}")
             blocks.append("end")
 
-        # MO read block
-        if "moread" in self.config:
-            blocks.append(f'''%moinp\n          "{self.config['mem_per_proc']}"''')
 
         return "\n".join(blocks)
 
@@ -249,7 +250,7 @@ class OrcaInput:
                 x = atom.position[0]
                 y = atom.position[1]
                 z = atom.position[2]
-                coords.append(f"{atom.symbol} {x:10.5f} {y:10.5f} {z:10.5f}")
+                coords.append(f"{atom.symbol:<3} {x:10.5f} {y:10.5f} {z:10.5f}")
             coords_str = "\n".join(coords)
             return f"* xyz {charge} {multiplicity}\n{coords_str}\n*"
     
@@ -526,7 +527,8 @@ class Orca:
     PATTERNS_TO_KEEP = ["*.inp", 
                         "*.out", 
                         "*.property.txt", 
-                        "*.xyz"]
+                        "*.xyz",
+                        "*.gbw",]
     
     def __init__(self, config, orca_cmd=None, work_dir=None):
         """
