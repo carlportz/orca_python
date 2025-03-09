@@ -136,6 +136,10 @@ class OrcaInput:
         # Add other keywords if specified
         if "keywords" in self.config:
             parts.append(self.config["keywords"])
+
+        # Add MO read option if specified
+        if "moread" in self.config:
+            parts.append("moread")
                 
         return " ".join(parts)
 
@@ -218,6 +222,10 @@ class OrcaInput:
             for c in self.config["casscf"].split(';'):
                 blocks.append(f"          {c}")
             blocks.append("end")
+
+        # MO read block
+        if "moread" in self.config:
+            blocks.append(f'''%moinp\n          "{self.config['mem_per_proc']}"''')
 
         return "\n".join(blocks)
 
