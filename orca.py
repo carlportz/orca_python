@@ -619,9 +619,11 @@ class Orca:
                 
         except subprocess.CalledProcessError as e:
             print(f"ORCA calculation failed with error:\n{e.stderr}")
+            self.clean_up()
             raise
         except Exception as e:
             print(f"Error running ORCA: {str(e)}")
+            self.clean_up()
             raise
 
         # Parse output
