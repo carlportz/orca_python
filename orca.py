@@ -294,199 +294,184 @@ class OrcaInput:
 
 class OrcaOutput:
     """
-    Class to handle ORCA properties file parsing with improved organization and error handling.
+    Class to parse ORCA output files.
 
-    Constants:
-        TYPE_PATTERN (str): Regex pattern to match the type information.
-        DIM_PATTERN (str): Regex pattern to match the array dimensions.
-        VALUE_PATTERN (str): Regex pattern to match the value for numeric types.
-        VALUE_PATTERN_STRING (str): Regex pattern to match the value for string types.
-
-    Methods:
-        get_data_type(type_info: str) -> Optional[str]:
-            Extract the data type from the type information string.
-        get_array_info(info: str) -> Optional[Tuple[int, int]]:
-            Extract the array dimensions from the information string.
-        convert_value(value: str, data_type: str) -> Any:
-            Convert a string value to the appropriate Python type based on the data type.
-        parse_property_line(line: str, current_data: dict) -> Tuple[bool, Optional[str], Optional[Tuple[int, int]], Optional[str]]:
-            Parse a property line starting with '&' and update the current data dictionary.
-        parse_orca_output(content: str) -> dict:
-            Parse the ORCA output file content into a structured dictionary.
+    Attributes:
+        key (str): Current key being processed.
+        value (str): Current value being processed.
+        type_info (str): Type information of the current value.
+        in_block (bool): Flag to indicate if we are in a block.
+        in_table (bool): Flag to indicate if we are in a table.
+        in_coords (bool): Flag to indicate if we are in a coordinate block.
+        current_block (str): Current block name (key).
+        block_data (dict): Current block data.
+        table (list): Current table data.
+        coords (list): Current coordinate data.
+        dims (tuple): Current table dimensions.
+        results (dict): Parsed results from the ORCA calculation.
     """
 
-    # Constants for regex patterns
-    TYPE_PATTERN = r'&Type\s*"([^"]+)"'
-    DIM_PATTERN = r'&Dim\s*\((\d+),(\d+)\)'
-    VALUE_PATTERN = r'\]\s*([^"]*)'
-    VALUE_PATTERN_STRING = r'\]\s*(.+)$'
-    
-    @staticmethod
-    def get_data_type(type_info):
-        """
-        Extract the data type from the type information string.
-
-        Args:
-            type_info (str): A string containing type information.
-
-        Returns:
-            str or None: The extracted data type if a match is found, otherwise None.
-        """
-        match = re.search(OrcaOutput.TYPE_PATTERN, type_info)
-
-        return match.group(1) if match else None
-
-    @staticmethod
-    def get_array_info(info):
-        """
-        Extract array dimensions from the information string.
-
-        Args:
-            info (str): The information string containing array dimensions.
-
-        Returns:
-            tuple: A tuple containing two integers representing the array dimensions if the pattern is found, otherwise None.
-        """
-        match = re.search(OrcaOutput.DIM_PATTERN, info)
-
-        return (int(match.group(1)), int(match.group(2))) if match else None
-
-    @staticmethod
-    def convert_value(value, data_type):
-        """
-        Convert a string value to the appropriate Python type based on the specified data type.
-
-        Args:
-            value (str): The string value to be converted.
-            data_type (str): The target data type for conversion.
-
-        Returns:
-            Any: The converted value in the appropriate Python type, or None if the input value is empty.
-        """
-        value = value.strip()
-        if not value:
-            return None
-            
-        converters = {
-            "String": lambda x: x.strip('"'),
-            "Integer": int,
-            "Double": float,
-            "Boolean": lambda x: x.lower() == "true",
-            "ArrayOfIntegers": lambda x: [int(i) for i in x.split()[1:] if i.strip()],
-            "ArrayOfDoubles": lambda x: [float(i) for i in x.split()[1:] if i.strip()],
-            "Coordinates": lambda x: [str(i) for i in x.split() if i.strip()]
-        }
-        
-        return converters.get(data_type, lambda x: x)(value)
-
-    def parse_property_line(self, line, current_data):
-        """
-        Parse a property line starting with '&' and update the current data dictionary.
-
-        Args:
-            line (str): The line to be parsed.
-            current_data (dict): The dictionary to be updated with parsed data.
-
-        Returns:
-            tuple: A tuple containing:
-                - bool: Indicates if the line represents an array.
-                - str or None: The key for the property if it is an array, otherwise None.
-                - list or None: The dimensions of the array if it is an array, otherwise None.
-                - str or None: The data type of the property if it is an array, otherwise None.
-        """
-        parts = line.split(None, 1)
-        key = parts[0][1:]
-        
-        if len(parts) <= 1:
-            return False, None, None, None
-            
-        value_info = parts[1]
-        data_type = self.get_data_type(value_info)
-        
-        if not data_type:
-            current_data[key] = value_info.strip()
-            return False, None, None, None
-            
-        array_dims = self.get_array_info(value_info)
-        if array_dims:
-            return True, key, array_dims, data_type
-            
-        # Extract value based on data type
-        pattern = OrcaOutput.VALUE_PATTERN if data_type in ("Double", "Integer") else OrcaOutput.VALUE_PATTERN_STRING
-        value_match = re.search(pattern, value_info)
-        
-        if value_match:
-            current_data[key] = self.convert_value(value_match.group(1), data_type)
-            
-        return False, None, None, None
+    def __init__(self):
+        """Initialize the OrcaOutput instance."""
+        self.key = None
+        self.value = None
+        self.type_info = None
+        self.in_block = False
+        self.in_table = False
+        self.in_coords = False
+        self.current_block = None
+        self.block_data = {}
+        self.table = []
+        self.coords = []
+        self.dims = None
+        self.results = {"Properties": []}
 
     def parse_orca_output(self, content):
         """
-        Parse ORCA output file content into a structured dictionary.
+        Parse the ORCA output content.
 
         Args:
-            content (str): The content of the ORCA output file as a string.
+            content (str): The content of the ORCA output file.
 
         Returns:
-            dict: A dictionary containing parsed data from the ORCA output file.
+            dict: Parsed results from the ORCA calculation.
         """
-        # Clean and split into lines
-        lines = [line.strip() for line in content.split('\n') 
-                if line.strip() and not line.startswith('#')]
-        
-        # Split into geometry blocks
-        geom_blocks = []
-        current_block = []
+        # Clean up and split into lines
+        lines = [line.strip() for line in content.split('\n') if line.strip() and not line.startswith('#')]
+
+        geom_index = -1
+
         for line in lines:
-            if any(marker in line for marker in ("$Geometry", "$Calculation_Status")):
-                if current_block:
-                    geom_blocks.append(current_block)
-                    current_block = []
-            current_block.append(line)
-        if current_block:
-            geom_blocks.append(current_block)
-        
-        result = {"Properties": []}
-        
-        for block in geom_blocks:
-            geom_result = {}
-            current_block = None
-            current_data = {}
-            collecting_array = False
-            array_data = []
-            array_key = None
-            array_dims = None
-            
-            for line in block:
-                if line.startswith('$') and not line.startswith('$End'):
-                    # Start new block
-                    current_block = line[1:]
-                    current_data = {}
-                    geom_result[current_block] = current_data
-                    collecting_array = False
-                    
-                elif line.startswith('$End'):
+            if line.startswith('$') or line.startswith('&'):
+                if self.in_table:
+                    # End table
+                    self.in_table = False
+                    self.block_data[self.key] = self.table.copy()
+                    self.table = []
+                if self.in_coords:
+                    # End coordinate block
+                    self.in_coords = False
+                    self.block_data[self.key] = self.coords.copy()
+                    self.coords = []
+
+            if line.startswith('$'):
+                if line.startswith('$Geometry'):
+                    self.results["Properties"].append({})
+                    geom_index += 1
+
+                if line.startswith('$End'):
+                    if self.current_block == "Calculation_Status":
+                        self.results["Calculation_Status"] = self.block_data.copy()
+                        continue
                     # End block
-                    if collecting_array and array_dims:
-                        current_data[array_key] = array_data[-(array_dims[0]*array_dims[1]):]
-                    collecting_array = False
-                    
-                elif line.startswith('&'):
-                    # Handle property line
-                    if collecting_array and array_dims:
-                        current_data[array_key] = array_data[-(array_dims[0]*array_dims[1]):]
-                        
-                    collecting_array, array_key, array_dims, data_type = self.parse_property_line(line, current_data)
-                    array_data = []
-                    
-                elif collecting_array:
-                    # Collect array data
-                    array_data.append(self.convert_value(line, data_type))
-            
-            if geom_result:
-                result["Properties"].append(geom_result)
-        
-        return result
+                    self.in_block = False
+                    if self.current_block in self.results["Properties"][geom_index]:
+                        self.current_block += "_"
+                    self.results["Properties"][geom_index][self.current_block] = self.block_data.copy()
+                else:
+                    # Start new block
+                    self.in_block = True
+                    self.current_block = line[1:]
+                    self.block_data = {}
+
+                continue
+
+            if self.in_table or self.in_coords:
+                # Handle table data
+                self.key, self.value = self.get_line_data(line)
+
+            if line.startswith('&') and self.in_block:
+                # Handle normal property line
+                self.key, self.value = self.get_line_data(line)
+                self.block_data[self.key] = self.value
+
+        return self.results
+
+    def get_line_data(self, line):
+        """
+        Extract key and value from a line of ORCA output.
+
+        Args:
+            line (str): A line from the ORCA output file.
+
+        Returns:
+            tuple: A tuple containing the key and value extracted from the line.
+        """
+        if not self.in_table and not self.in_coords:
+            # Get the key
+            match = re.search(r'&(\S+)', line)
+            if match:
+                key = match.group(1)
+
+            # Get type info
+            match = re.search(r'\[&Type\s*"([^"]+)"', line)
+            if match:
+                self.type_info = match.group(1)
+            else:
+                self.type_info = None
+
+            # Get dimensions
+            match = re.search(r'&Dim\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)', line)
+            if match:
+                self.dims = (int(match.group(1)), int(match.group(2)))
+            else:
+                self.dims = None
+
+            # Get value
+            if self.type_info is not None:
+                if self.type_info == "String":
+                    match = re.search(r'\]\s*"([^"]+)"', line)
+                    if match:
+                        value = str(match.group(1))
+                elif self.type_info == "Integer":
+                    match = re.search(r'\]\s*(-?\d+)', line)
+                    if match:
+                        value = int(match.group(1))
+                elif self.type_info == "Double":
+                    match = re.search(r'\]\s*(-?\d+(\.\d+)?([eE][-+]?\d+)?)', line)
+                    if match:
+                        value = float(match.group(1))
+                elif self.type_info == "Boolean":
+                    match = re.search(r'\]\s*(\w+)', line)
+                    if match:
+                        value = bool(match.group(1))
+                elif "Array" in self.type_info:
+                    self.in_table = True
+                    self.table = [[] for _ in range(self.dims[0])]
+                    value = None
+                elif self.type_info == "Coordinates":
+                    self.in_coords = True
+                    self.coords = []
+                    value = None
+            else:
+                match = re.search(r'&(\S+)\s*(.*)', line)
+                if match:
+                    value = str(match.group(2).strip())
+
+        elif self.in_table:
+            row_max = len(self.table[0])
+            if line.split() == [str(i + row_max) for i in range(8) if i + row_max < self.dims[1]]:
+                row_max += 8
+                key = self.key
+                value = None
+            else:
+                values = line.split()
+                if self.type_info == "ArrayOfIntegers":
+                    self.table[int(line.split()[0])].extend([int(i) for i in values[1:]])
+                elif self.type_info == "ArrayOfDoubles":
+                    self.table[int(line.split()[0])].extend([float(i) for i in values[1:]])
+                else:
+                    self.table[int(line.split()[0])].extend(values[1:])
+                key = self.key
+                value = None
+
+        elif self.in_coords:
+            values = line.split()
+            self.coords.append([str(values[0]), float(values[1]), float(values[2]), float(values[3])])
+            key = self.key
+            value = None
+
+        return key, value
 
 
 class Orca:
@@ -527,8 +512,7 @@ class Orca:
     PATTERNS_TO_KEEP = ["*.inp", 
                         "*.out", 
                         "*.property.txt", 
-                        "*.xyz",
-                        "*.gbw",]
+                        "*.xyz"]
     
     def __init__(self, config, orca_cmd=None, work_dir=None):
         """
@@ -718,12 +702,14 @@ if __name__ == "__main__":
     # Example configuration
     config = {
         "base": "orca",
-        "type": "opt",
+        "type": "optfreq",
         "method": "b3lyp",
-        "basis": "6-31g",
+        "basis": "sto-3g",
         "nprocs": "2",
         "mem_per_proc": "3000",
-        "keywords": "nopop smallprint",
+        "tddft": "nroots 10",
+        "freq": "temp 293",
+        "keywords": "largeprint printmos",
     }
 
     # Read molecule from xyz file
