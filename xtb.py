@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import shutil
 import socket
+import os
 
 from ase import Atoms
 from ase.io import read, write
@@ -196,7 +197,7 @@ class XtbInput:
             command += f" --input {filename}"
 
         # Write the coordinates to a separate file
-        coords_file = work_dir / f"{self.config['base']}_input.xyz"
+        coords_file = os.path.join(work_dir, f"{self.config['base']}_input.xyz")
         write(coords_file, molecule, format='xyz')
 
         # Add coordinates file to the command
@@ -454,8 +455,8 @@ class Xtb:
             raise ValueError("No results available. Run calculation first.")
         
         # Construct path to last geometry
-        mol_path = self.work_dir / f"{self.base_name}.xtbopt.xyz"
-        if not mol_path.exists():
+        mol_path = os.path.join(self.work_dir, f"{self.base_name}.xtbopt.xyz")
+        if not os.path.exists(mol_path):
             raise FileNotFoundError(f"Geometry file not found: {mol_path}")
 
         # Read last geometry from file
@@ -473,8 +474,10 @@ if __name__ == "__main__":
         "type": "opt",
         "method": "gfn2",
         "nprocs": "2",
+        "constraints": "angle: 2, 1, 3, 120.0",
+        "force constant": 1.5,
     }
-
+ 
     # Read molecule from xyz file
     mol = read("./test/water.xyz", format='xyz')
     

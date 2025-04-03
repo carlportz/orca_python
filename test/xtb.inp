@@ -1,0 +1,4 @@
+$constrain
+    force constant=1.5
+    angle: 1, 2, 3, 120.0
+$end
