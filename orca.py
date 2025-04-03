@@ -365,9 +365,10 @@ class OrcaOutput:
                         continue
                     # End block
                     self.in_block = False
-                    if self.current_block in self.results["Properties"][geom_index]:
-                        self.current_block += "_"
-                    self.results["Properties"][geom_index][self.current_block] = self.block_data.copy()
+                    if len(self.results["Properties"]) >= 1:
+                        if self.current_block in self.results["Properties"][geom_index]:
+                            self.current_block += "_"
+                        self.results["Properties"][geom_index][self.current_block] = self.block_data.copy()
                 else:
                     # Start new block
                     self.in_block = True
