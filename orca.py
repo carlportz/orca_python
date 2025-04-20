@@ -39,7 +39,10 @@ class OrcaInput:
     
     # Valid ORCA SCF convergence criteria
     VALID_SCF = {
+        "sloppy": "sloppyscf",
         "loose": "loosescf",
+        "normal": "normalscf",
+        "strong": "strongscf",
         "tight": "tightscf",
         "verytight": "verytightscf",
     }
